@@ -235,17 +235,11 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => (
-                  <CalendarJob key={job.id} job={job} onToggle={() => setJobCompleted(job.id, job.status !== 'completed')} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
-                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day. Tap the day the job is on.</p>}
+                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
             )}
-            <div className="mt-6">
-              <h3 className="font-medium mb-2 text-sm">Every job on this month</h3>
-              {jobs.filter(j => j.scheduled_date && (j.status === 'scheduled' || j.status === 'completed') && isSameMonth(new Date(j.scheduled_date), currentMonth)).map(job => (
-                <CalendarJob key={job.id} job={job} onToggle={() => setJobCompleted(job.id, job.status !== 'completed')} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
-              ))}
-            </div>
           </div>
         )}
 
@@ -334,20 +328,6 @@ function QuickAdd({ onAdd, placeholder }: any) {
   );
 }
 
-function CalendarJob({ job, onToggle, onEdit, onDelete }: any) {
-  return (
-    <div className="bg-white p-3 rounded-lg border mb-3">
-      <label className="flex items-center gap-3 text-base font-medium">
-        <input type="checkbox" className="w-7 h-7" checked={job.status === 'completed'} onChange={onToggle} />
-        Completed
-      </label>
-      <div className="mt-2">
-        <JobCard job={job} onEdit={onEdit} onDelete={onDelete} />
-      </div>
-    </div>
-  );
-}
-
 function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }: any) {
   return (
     <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
@@ -367,7 +347,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
             </div>
           )}
           {showCompletedCheck && (
-            <label className="flex items-center gap-2 mt-3 text-sm">
+            <label className="flex items-center gap-2 mt-3 text-sm font-medium">
               <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed'} onChange={() => onToggleComplete(job.status !== 'completed')} />
               Completed
             </label>
