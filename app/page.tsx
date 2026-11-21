@@ -28,6 +28,14 @@ type Todo = {
   completed: boolean;
 };
 
+function toLocalInput(value?: string) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -119,6 +127,16 @@ export default function Home() {
     }
     setShowJobModal(false);
     setEditingJob(null);
+    if (jobData.scheduled_date && jobData.status === 'scheduled') {
+      const when = new Date(jobData.scheduled_date);
+      setActiveTab('calendar');
+      setSelectedDate(when);
+      setCurrentMonth(when);
+    } else if (jobData.status === 'completed') {
+      setActiveTab('completed');
+    } else {
+      setActiveTab('unscheduled');
+    }
     await fetchData();
   }
 
@@ -160,7 +178,7 @@ export default function Home() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const jobsOnDate = (date: Date) => jobs.filter(j => j.scheduled_date && isSameDay(new Date(j.scheduled_date), date) && j.status !== 'completed');
+  const jobsOnDate = (date: Date) => jobs.filter(j => j.status === 'scheduled' && j.scheduled_date && isSameDay(new Date(j.scheduled_date), date));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -180,7 +198,9 @@ export default function Home() {
             {tab}
           </button>
         ))}
-        <button onClick={() => { setEditingJob(null); setShowJobModal(true); }} className="ml-auto px-3 py-3 text-sm text-blue-600 whitespace-nowrap">+ New</button>
+        {(activeTab === 'calendar' || activeTab === 'unscheduled') && (
+          <button onClick={() => { setEditingJob(null); setShowJobModal(true); }} className="ml-auto px-3 py-3 text-sm text-blue-600 whitespace-nowrap">+ Job</button>
+        )}
       </nav>
 
       <main className="p-3 sm:p-4 max-w-7xl mx-auto pb-20">
@@ -215,7 +235,7 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onComplete={() => markComplete(job.id)} />)}
-                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">No jobs scheduled.</p>}
+                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day. Jobs without a date are on Unscheduled.</p>}
               </div>
             )}
           </div>
@@ -227,7 +247,7 @@ export default function Home() {
             {jobs.filter(j => j.status === 'unscheduled').map(job => (
               <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onComplete={() => markComplete(job.id)} />
             ))}
-            {jobs.filter(j => j.status === 'unscheduled').length === 0 && <p className="text-gray-500">None</p>}
+            {jobs.filter(j => j.status === 'unscheduled').length === 0 && <p className="text-gray-500">None yet. Use + Job on this tab. Leave the date blank.</p>}
           </div>
         )}
 
@@ -272,7 +292,7 @@ export default function Home() {
         )}
       </main>
 
-      {showJobModal && <JobModal job={editingJob} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={selectedDate} />}
+      {showJobModal && <JobModal job={editingJob} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={activeTab === 'calendar' ? selectedDate : null} />}
     </div>
   );
 }
@@ -340,7 +360,7 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
     title: job?.title || '',
     description: job?.description || '',
     status: job?.status || 'unscheduled',
-    scheduled_date: job?.scheduled_date ? job.scheduled_date.slice(0,16) : (defaultDate ? format(defaultDate, "yyyy-MM-dd'T'HH:mm") : ''),
+    scheduled_date: job?.scheduled_date ? toLocalInput(job.scheduled_date) : (defaultDate ? format(defaultDate, "yyyy-MM-dd'T'HH:mm") : ''),
     customer_name: job?.customer_name || '',
     customer_phone: job?.customer_phone || '',
     address: job?.address || '',
@@ -369,7 +389,10 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
     };
     if (form.scheduled_date) {
       data.scheduled_date = new Date(form.scheduled_date).toISOString();
-      if (data.status === 'unscheduled') data.status = 'scheduled';
+      if (data.status !== 'completed') data.status = 'scheduled';
+    } else {
+      data.scheduled_date = null;
+      if (data.status !== 'completed') data.status = 'unscheduled';
     }
     onSave(data, newPhotos);
   };
@@ -385,6 +408,7 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
           <input placeholder="Phone" value={form.customer_phone} onChange={e => setForm({...form, customer_phone: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
+          <p className="text-xs text-gray-500 -mt-2">Leave the date blank for Unscheduled. A date puts it on the calendar only.</p>
           <textarea placeholder="Notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="w-full border rounded px-3 py-2" rows={3} />
           <div>
             <label className="text-sm text-gray-600">Photos</label>
