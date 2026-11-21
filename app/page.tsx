@@ -111,33 +111,46 @@ export default function Home() {
     jobData.photos = photoUrls;
 
     if (jobId) {
-      await supabase.from('jobs').update(jobData).eq('id', jobId);
+      const { error } = await supabase.from('jobs').update(jobData).eq('id', jobId);
+      if (error) { alert(error.message); return; }
     } else {
-      const { data } = await supabase.from('jobs').insert(jobData).select().single();
-      jobId = data?.id;
+      const { error } = await supabase.from('jobs').insert(jobData);
+      if (error) { alert(error.message); return; }
     }
     setShowJobModal(false);
     setEditingJob(null);
+    await fetchData();
   }
 
   async function markComplete(id: string) {
-    await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
+    const { error } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
+    if (error) { alert(error.message); return; }
+    await fetchData();
   }
 
   async function deleteJob(id: string) {
-    if (confirm('Delete this job?')) await supabase.from('jobs').delete().eq('id', id);
+    if (!confirm('Delete this job?')) return;
+    const { error } = await supabase.from('jobs').delete().eq('id', id);
+    if (error) { alert(error.message); return; }
+    await fetchData();
   }
 
   async function addTodo(title: string) {
-    await supabase.from('todos').insert({ title });
+    const { error } = await supabase.from('todos').insert({ title });
+    if (error) { alert(error.message); return; }
+    await fetchData();
   }
 
   async function toggleTodo(id: string, completed: boolean) {
-    await supabase.from('todos').update({ completed: !completed }).eq('id', id);
+    const { error } = await supabase.from('todos').update({ completed: !completed }).eq('id', id);
+    if (error) { alert(error.message); return; }
+    await fetchData();
   }
 
   async function deleteTodo(id: string) {
-    await supabase.from('todos').delete().eq('id', id);
+    const { error } = await supabase.from('todos').delete().eq('id', id);
+    if (error) { alert(error.message); return; }
+    await fetchData();
   }
 
   if (authLoading) return <div className="p-8 text-center">Loading...</div>;
