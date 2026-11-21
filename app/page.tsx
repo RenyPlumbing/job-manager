@@ -44,7 +44,7 @@ export default function Home() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
 
@@ -234,10 +234,18 @@ export default function Home() {
             {selectedDate && (
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
-                {jobsOnDate(selectedDate).map(job => <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />)}
-                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day. Jobs without a date are on Unscheduled.</p>}
+                {jobsOnDate(selectedDate).map(job => (
+                  <CalendarJob key={job.id} job={job} onToggle={() => setJobCompleted(job.id, job.status !== 'completed')} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                ))}
+                {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day. Tap the day the job is on.</p>}
               </div>
             )}
+            <div className="mt-6">
+              <h3 className="font-medium mb-2 text-sm">Every job on this month</h3>
+              {jobs.filter(j => j.scheduled_date && (j.status === 'scheduled' || j.status === 'completed') && isSameMonth(new Date(j.scheduled_date), currentMonth)).map(job => (
+                <CalendarJob key={job.id} job={job} onToggle={() => setJobCompleted(job.id, job.status !== 'completed')} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+              ))}
+            </div>
           </div>
         )}
 
@@ -323,6 +331,20 @@ function QuickAdd({ onAdd, placeholder }: any) {
       <input value={value} onChange={e => setValue(e.target.value)} placeholder={placeholder} className="border rounded px-3 py-1.5 text-sm flex-1" />
       <button className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm">Add</button>
     </form>
+  );
+}
+
+function CalendarJob({ job, onToggle, onEdit, onDelete }: any) {
+  return (
+    <div className="bg-white p-3 rounded-lg border mb-3">
+      <label className="flex items-center gap-3 text-base font-medium">
+        <input type="checkbox" className="w-7 h-7" checked={job.status === 'completed'} onChange={onToggle} />
+        Completed
+      </label>
+      <div className="mt-2">
+        <JobCard job={job} onEdit={onEdit} onDelete={onDelete} />
+      </div>
+    </div>
   );
 }
 
