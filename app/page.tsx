@@ -140,8 +140,8 @@ export default function Home() {
     await fetchData();
   }
 
-  async function markComplete(id: string) {
-    const { error } = await supabase.from('jobs').update({ status: 'completed' }).eq('id', id);
+  async function setJobCompleted(id: string, completed: boolean) {
+    const { error } = await supabase.from('jobs').update({ status: completed ? 'completed' : 'scheduled' }).eq('id', id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
@@ -178,7 +178,7 @@ export default function Home() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const jobsOnDate = (date: Date) => jobs.filter(j => j.status === 'scheduled' && j.scheduled_date && isSameDay(new Date(j.scheduled_date), date));
+  const jobsOnDate = (date: Date) => jobs.filter(j => j.scheduled_date && (j.status === 'scheduled' || j.status === 'completed') && isSameDay(new Date(j.scheduled_date), date));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -225,7 +225,7 @@ export default function Home() {
                   <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
                     className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-right font-medium">{format(day, 'd')}</div>
-                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className="bg-blue-100 text-blue-800 px-0.5 rounded truncate mt-0.5">{j.title}</div>)}
+                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${j.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{j.title}</div>)}
                     {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
                   </div>
                 );
@@ -234,7 +234,7 @@ export default function Home() {
             {selectedDate && (
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
-                {jobsOnDate(selectedDate).map(job => <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onComplete={() => markComplete(job.id)} />)}
+                {jobsOnDate(selectedDate).map(job => <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />)}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day. Jobs without a date are on Unscheduled.</p>}
               </div>
             )}
@@ -245,7 +245,7 @@ export default function Home() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Unscheduled Jobs</h2>
             {jobs.filter(j => j.status === 'unscheduled').map(job => (
-              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onComplete={() => markComplete(job.id)} />
+              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} />
             ))}
             {jobs.filter(j => j.status === 'unscheduled').length === 0 && <p className="text-gray-500">None yet. Use + Job on this tab. Leave the date blank.</p>}
           </div>
@@ -326,7 +326,7 @@ function QuickAdd({ onAdd, placeholder }: any) {
   );
 }
 
-function JobCard({ job, onEdit, onDelete, onComplete }: any) {
+function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }: any) {
   return (
     <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
       <div className="flex justify-between items-start gap-2">
@@ -344,10 +344,16 @@ function JobCard({ job, onEdit, onDelete, onComplete }: any) {
               {job.photos.length > 3 && <span className="text-xs text-gray-500 self-center">+{job.photos.length - 3}</span>}
             </div>
           )}
+          {showCompletedCheck && (
+            <label className="flex items-center gap-2 mt-3 text-sm">
+              <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed'} onChange={() => onToggleComplete(job.status !== 'completed')} />
+              Completed
+            </label>
+          )}
         </div>
         <div className="flex flex-col gap-1 text-sm flex-shrink-0">
           <button onClick={onEdit} className="text-blue-600">Edit</button>
-          {onComplete && job.status !== 'completed' && <button onClick={onComplete} className="text-green-600">Done</button>}
+          {!showCompletedCheck && onToggleComplete && job.status !== 'completed' && <button onClick={() => onToggleComplete(true)} className="text-green-600">Done</button>}
           <button onClick={onDelete} className="text-red-500">Delete</button>
         </div>
       </div>
