@@ -26,6 +26,7 @@ type Todo = {
   id: string;
   title: string;
   completed: boolean;
+  created_at?: string;
 };
 
 function toLocalInput(value?: string) {
@@ -481,7 +482,7 @@ export default function Home() {
                     <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5 mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
-                      <p className="text-xs text-gray-500 mt-1">Created by {creator?.nickname || task.creator || 'Unknown'}</p>
+                      <p className="text-xs text-gray-500 mt-1">Created{todo.created_at ? ` ${format(new Date(todo.created_at), 'PPp')}` : ''} by {creator?.nickname || task.creator || 'Unknown'}</p>
                       <label className="block text-xs text-gray-500 mt-2">Assigned to</label>
                       <select value={task.assignee} onChange={e => assignTodo(todo, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm mt-1">
                         <option value="">Unassigned</option>
