@@ -223,7 +223,7 @@ export default function Home() {
         {(['calendar', 'unscheduled', 'completed', 'todos', 'estimator'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-3 py-3 text-sm font-medium capitalize whitespace-nowrap flex-shrink-0 ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
-            {tab}
+            {tab === 'todos' ? 'Task List' : tab}
           </button>
         ))}
         {(activeTab === 'calendar' || activeTab === 'unscheduled') && (
@@ -294,7 +294,7 @@ export default function Home() {
         {activeTab === 'todos' && (
           <div>
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold">To-Do List</h2>
+              <h2 className="text-lg font-semibold">Task List</h2>
               <QuickAdd onAdd={addTodo} placeholder="New task..." />
             </div>
             {todos.map(todo => (
