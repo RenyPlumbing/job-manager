@@ -65,7 +65,24 @@ type Customer = {
   name: string;
   phone?: string;
   address?: string;
+  email?: string;
 };
+
+function readEmail(notes?: string) {
+  const match = (notes || '').match(/^@@email:(.*?)@@\n?/);
+  return match ? match[1] : '';
+}
+
+function readNotes(notes?: string) {
+  return (notes || '').replace(/^@@email:.*?@@\n?/, '');
+}
+
+function packNotes(email: string, notes: string) {
+  const clean = readNotes(notes).trim();
+  const trimmed = email.trim();
+  if (!trimmed) return clean || null;
+  return `@@email:${trimmed}@@${clean ? `\n${clean}` : ''}`;
+}
 
 function customerDirectory(jobs: Job[], saved: Customer[]): Customer[] {
   const map = new Map<string, Customer>();
@@ -73,7 +90,7 @@ function customerDirectory(jobs: Job[], saved: Customer[]): Customer[] {
     const name = (job.customer_name || '').trim();
     const key = name.toLowerCase();
     if (!key) continue;
-    map.set(key, { name, phone: job.customer_phone || '', address: job.address || '' });
+    map.set(key, { name, phone: job.customer_phone || '', address: job.address || '', email: readEmail(job.notes) });
   }
   for (const customer of saved) {
     const name = (customer.name || '').trim();
@@ -372,6 +389,7 @@ export default function Home() {
                   {open && (
                     <div className="px-3 pb-3 text-sm text-gray-700 space-y-1">
                       <p>Phone: {customer.phone || 'None'}</p>
+                      <p>Email: {customer.email || 'None'}</p>
                       <p>Address: {customer.address || 'None'}</p>
                     </div>
                   )}
@@ -474,7 +492,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
           <h3 className="font-medium truncate">{job.title}</h3>
           {job.customer_name && <p className="text-sm text-gray-600">{job.customer_name}</p>}
           {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
-          {job.notes && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{job.notes}</p>}
+          {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
           {job.total_estimate && <p className="text-sm text-green-700">Est: ${Number(job.total_estimate).toFixed(2)}</p>}
           {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           {showCompletedCheck && (
@@ -502,8 +520,9 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
     scheduled_date: job?.scheduled_date ? toLocalInput(job.scheduled_date) : (defaultDate ? format(defaultDate, "yyyy-MM-dd'T'HH:mm") : ''),
     customer_name: job?.customer_name || '',
     customer_phone: job?.customer_phone || '',
+    customer_email: readEmail(job?.notes),
     address: job?.address || '',
-    notes: job?.notes || '',
+    notes: readNotes(job?.notes),
     estimated_hours: job?.estimated_hours || '',
     hourly_rate: job?.hourly_rate || '',
     material_cost: job?.material_cost || '',
@@ -528,7 +547,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
       customer_name: form.customer_name || null,
       customer_phone: form.customer_phone || null,
       address: form.address || null,
-      notes: form.notes || null,
+      notes: packNotes(form.customer_email, form.notes),
       estimated_hours: form.estimated_hours ? +form.estimated_hours : null,
       hourly_rate: form.hourly_rate ? +form.hourly_rate : null,
       material_cost: form.material_cost ? +form.material_cost : null,
@@ -574,14 +593,15 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
                         ...form,
                         customer_name: customer.name,
                         customer_phone: customer.phone || '',
+                        customer_email: customer.email || '',
                         address: customer.address || '',
                       });
                       setNameOpen(false);
                     }}
                   >
                     <div className="font-medium">{customer.name}</div>
-                    {(customer.phone || customer.address) && (
-                      <div className="text-xs text-gray-500 truncate">{[customer.phone, customer.address].filter(Boolean).join(' · ')}</div>
+                    {(customer.phone || customer.email || customer.address) && (
+                      <div className="text-xs text-gray-500 truncate">{[customer.phone, customer.email, customer.address].filter(Boolean).join(' · ')}</div>
                     )}
                   </button>
                 ))}
@@ -589,6 +609,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
             )}
           </div>
           <input placeholder="Phone" value={form.customer_phone} onChange={e => setForm({...form, customer_phone: e.target.value})} className="w-full border rounded px-3 py-2" />
+          <input type="email" placeholder="Email" value={form.customer_email} onChange={e => setForm({...form, customer_email: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
           <p className="text-xs text-gray-500 -mt-2">Leave the date blank for Unscheduled. A date puts it on the calendar only.</p>
