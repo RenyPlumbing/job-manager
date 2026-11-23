@@ -130,22 +130,50 @@ function userTitle(email: string, nickname: string) {
 
 const TASK_MARK = '@@task:';
 
-function packTask(text: string, creator: string, assignee: string) {
-  return `${TASK_MARK}${creator}|${assignee}@@${text.trim()}`;
+function packTask(text: string, creator: string, assignee: string, photos: string[] = []) {
+  const clean = photos.map(photo => photo.replace(/^b64:/, '')).filter(Boolean);
+  const photoPart = clean.length ? `@@photos:${clean.join('|')}` : '';
+  return `${TASK_MARK}${creator}|${assignee}@@${text.trim()}${photoPart}`;
 }
 
 function unpackTask(title?: string) {
-  if (!title?.startsWith(TASK_MARK)) return { text: title || '', creator: '', assignee: '' };
+  const empty = { text: title || '', creator: '', assignee: '', photos: [] as string[] };
+  if (!title?.startsWith(TASK_MARK)) return empty;
   const rest = title.slice(TASK_MARK.length);
   const splitAt = rest.indexOf('@@');
-  if (splitAt === -1) return { text: title, creator: '', assignee: '' };
+  if (splitAt === -1) return { text: title, creator: '', assignee: '', photos: [] as string[] };
   const meta = rest.slice(0, splitAt);
+  let body = rest.slice(splitAt + 2);
+  let photos: string[] = [];
+  const photoAt = body.indexOf('@@photos:');
+  if (photoAt !== -1) {
+    photos = body.slice(photoAt + '@@photos:'.length).split('|').filter(Boolean).map(photo => photo.startsWith('b64:') ? photo : `b64:${photo}`);
+    body = body.slice(0, photoAt);
+  }
   const bar = meta.indexOf('|');
   return {
-    text: rest.slice(splitAt + 2),
+    text: body,
     creator: bar === -1 ? meta : meta.slice(0, bar),
     assignee: bar === -1 ? '' : meta.slice(bar + 1),
+    photos,
   };
+}
+
+async function filesToPhotos(files: File[]) {
+  const photos: string[] = [];
+  const failed: string[] = [];
+  for (const file of files) {
+    try {
+      const blob = await compressImage(file);
+      const dataUrl = await blobToDataUrl(blob);
+      const base64 = dataUrl.split(',')[1];
+      if (!base64) throw new Error('empty');
+      photos.push(base64);
+    } catch {
+      failed.push(file.name || 'photo');
+    }
+  }
+  return { photos, failed };
 }
 
 export default function Home() {
@@ -160,6 +188,8 @@ export default function Home() {
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [newTaskPhotos, setNewTaskPhotos] = useState<File[]>([]);
+  const [editTaskPhotos, setEditTaskPhotos] = useState<File[]>([]);
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [nicknameLoaded, setNicknameLoaded] = useState(false);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
@@ -329,14 +359,17 @@ export default function Home() {
     await fetchData();
   }
 
-  async function addTodo(title: string, assignee: string) {
+  async function addTodo(title: string, assignee: string, files: File[]) {
     const text = title.trim();
     if (!text) return;
     const creator = session?.user?.email || '';
-    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee) });
+    const { photos, failed } = await filesToPhotos(files);
+    if (failed.length) alert('Could not save: ' + failed.join(', '));
+    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos) });
     if (error) { alert(error.message); return; }
     setNewTaskTitle('');
     setNewTaskAssignee('');
+    setNewTaskPhotos([]);
     setShowTaskForm(false);
     await fetchData();
   }
@@ -344,18 +377,21 @@ export default function Home() {
   async function assignTodo(todo: Todo, assignee: string) {
     const parsed = unpackTask(todo.title);
     const creator = parsed.creator || session?.user?.email || '';
-    const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee) }).eq('id', todo.id);
+    const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee, parsed.photos) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
 
-  async function editTodo(todo: Todo, text: string) {
+  async function editTodo(todo: Todo, text: string, files: File[]) {
     const trimmed = text.trim();
     if (!trimmed) return;
     const parsed = unpackTask(todo.title);
-    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee) }).eq('id', todo.id);
+    const { photos, failed } = await filesToPhotos(files);
+    if (failed.length) alert('Could not save: ' + failed.join(', '));
+    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee, [...parsed.photos, ...photos]) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     setEditingTodoId(null);
+    setEditTaskPhotos([]);
     await fetchData();
   }
 
@@ -471,7 +507,7 @@ export default function Home() {
               <button onClick={() => setShowTaskForm(true)} className="text-sm text-blue-600">+ New Task</button>
             </div>
             {showTaskForm && (
-              <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
+              <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee, newTaskPhotos); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
                 <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task" required className="w-full border rounded px-3 py-2" />
                 <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} className="w-full border rounded px-3 py-2">
                   <option value="">Assign to...</option>
@@ -479,6 +515,7 @@ export default function Home() {
                     <option key={person.email} value={person.email}>{person.nickname || person.email}</option>
                   ))}
                 </select>
+                <input type="file" accept="image/*" multiple onChange={e => setNewTaskPhotos(Array.from(e.target.files || []))} className="w-full text-sm" />
                 <div className="flex gap-2">
                   <button className="bg-blue-600 text-white px-3 py-2 rounded text-sm">Save</button>
                   <button type="button" onClick={() => setShowTaskForm(false)} className="px-3 py-2 border rounded text-sm">Cancel</button>
@@ -494,14 +531,18 @@ export default function Home() {
                     <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5 mt-1" />
                     <div className="flex-1 min-w-0">
                       {editingTodoId === todo.id ? (
-                        <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle); }} className="flex gap-2">
-                          <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} required className="border rounded px-2 py-1 flex-1" />
-                          <button className="text-blue-600 text-sm">Save</button>
-                          <button type="button" onClick={() => setEditingTodoId(null)} className="text-gray-500 text-sm">Cancel</button>
+                        <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle, editTaskPhotos); }} className="space-y-2">
+                          <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} required className="border rounded px-2 py-1 w-full" />
+                          <input type="file" accept="image/*" multiple onChange={e => setEditTaskPhotos(Array.from(e.target.files || []))} className="w-full text-sm" />
+                          <div className="flex gap-2">
+                            <button className="text-blue-600 text-sm">Save</button>
+                            <button type="button" onClick={() => { setEditingTodoId(null); setEditTaskPhotos([]); }} className="text-gray-500 text-sm">Cancel</button>
+                          </div>
                         </form>
                       ) : (
                         <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
                       )}
+                      {task.photos.length > 0 && <PhotoGallery urls={task.photos} />}
                       <p className="text-xs text-gray-500 mt-1">Created{todo.created_at ? ` ${format(new Date(todo.created_at), 'PPp')}` : ''} by {creator?.nickname || task.creator || 'Unknown'}</p>
                       <label className="block text-xs text-gray-500 mt-2">Assigned to</label>
                       <select value={task.assignee} onChange={e => assignTodo(todo, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm mt-1">
@@ -512,7 +553,7 @@ export default function Home() {
                       </select>
                     </div>
                     <div className="flex flex-col gap-1 text-sm">
-                      <button onClick={() => { setEditingTodoId(todo.id); setEditTaskTitle(task.text); }} className="text-blue-600">Edit</button>
+                      <button onClick={() => { setEditingTodoId(todo.id); setEditTaskTitle(task.text); setEditTaskPhotos([]); }} className="text-blue-600">Edit</button>
                       <button onClick={() => deleteTodo(todo.id)} className="text-red-500">Delete</button>
                     </div>
                   </div>
