@@ -127,6 +127,26 @@ function userTitle(email: string, nickname: string) {
   return `${USER_MARK}${email}|${nickname.trim()}`;
 }
 
+const TASK_MARK = '@@task:';
+
+function packTask(text: string, creator: string, assignee: string) {
+  return `${TASK_MARK}${creator}|${assignee}@@${text.trim()}`;
+}
+
+function unpackTask(title?: string) {
+  if (!title?.startsWith(TASK_MARK)) return { text: title || '', creator: '', assignee: '' };
+  const rest = title.slice(TASK_MARK.length);
+  const splitAt = rest.indexOf('@@');
+  if (splitAt === -1) return { text: title, creator: '', assignee: '' };
+  const meta = rest.slice(0, splitAt);
+  const bar = meta.indexOf('|');
+  return {
+    text: rest.slice(splitAt + 2),
+    creator: bar === -1 ? meta : meta.slice(0, bar),
+    assignee: bar === -1 ? '' : meta.slice(bar + 1),
+  };
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -134,6 +154,9 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [users, setUsers] = useState<{ email: string; nickname: string }[]>([]);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState('');
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [nicknameLoaded, setNicknameLoaded] = useState(false);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
@@ -303,8 +326,22 @@ export default function Home() {
     await fetchData();
   }
 
-  async function addTodo(title: string) {
-    const { error } = await supabase.from('todos').insert({ title });
+  async function addTodo(title: string, assignee: string) {
+    const text = title.trim();
+    if (!text) return;
+    const creator = session?.user?.email || '';
+    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee) });
+    if (error) { alert(error.message); return; }
+    setNewTaskTitle('');
+    setNewTaskAssignee('');
+    setShowTaskForm(false);
+    await fetchData();
+  }
+
+  async function assignTodo(todo: Todo, assignee: string) {
+    const parsed = unpackTask(todo.title);
+    const creator = parsed.creator || session?.user?.email || '';
+    const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
@@ -418,15 +455,46 @@ export default function Home() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-lg font-semibold">Task List</h2>
-              <QuickAdd onAdd={addTodo} placeholder="New task..." />
+              <button onClick={() => setShowTaskForm(true)} className="text-sm text-blue-600">+ New Task</button>
             </div>
-            {todos.map(todo => (
-              <div key={todo.id} className="flex items-center gap-3 bg-white p-3 rounded-lg border mb-2">
-                <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5" />
-                <span className={`flex-1 ${todo.completed ? 'line-through text-gray-400' : ''}`}>{todo.title}</span>
-                <button onClick={() => deleteTodo(todo.id)} className="text-red-500 text-sm">Delete</button>
-              </div>
-            ))}
+            {showTaskForm && (
+              <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
+                <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task" required className="w-full border rounded px-3 py-2" />
+                <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} className="w-full border rounded px-3 py-2">
+                  <option value="">Assign to...</option>
+                  {users.map(person => (
+                    <option key={person.email} value={person.email}>{person.nickname || person.email}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button className="bg-blue-600 text-white px-3 py-2 rounded text-sm">Save</button>
+                  <button type="button" onClick={() => setShowTaskForm(false)} className="px-3 py-2 border rounded text-sm">Cancel</button>
+                </div>
+              </form>
+            )}
+            {todos.map(todo => {
+              const task = unpackTask(todo.title);
+              const creator = users.find(person => person.email === task.creator);
+              return (
+                <div key={todo.id} className="bg-white p-3 rounded-lg border mb-2">
+                  <div className="flex items-start gap-3">
+                    <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5 mt-1" />
+                    <div className="flex-1 min-w-0">
+                      <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
+                      <p className="text-xs text-gray-500 mt-1">Created by {creator?.nickname || task.creator || 'Unknown'}</p>
+                      <label className="block text-xs text-gray-500 mt-2">Assigned to</label>
+                      <select value={task.assignee} onChange={e => assignTodo(todo, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm mt-1">
+                        <option value="">Unassigned</option>
+                        {users.map(person => (
+                          <option key={person.email} value={person.email}>{person.nickname || person.email}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button onClick={() => deleteTodo(todo.id)} className="text-red-500 text-sm">Delete</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
