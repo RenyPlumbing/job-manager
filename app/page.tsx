@@ -158,6 +158,8 @@ export default function Home() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [nicknameLoaded, setNicknameLoaded] = useState(false);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
@@ -347,6 +349,16 @@ export default function Home() {
     await fetchData();
   }
 
+  async function editTodo(todo: Todo, text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const parsed = unpackTask(todo.title);
+    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee) }).eq('id', todo.id);
+    if (error) { alert(error.message); return; }
+    setEditingTodoId(null);
+    await fetchData();
+  }
+
   async function toggleTodo(id: string, completed: boolean) {
     const { error } = await supabase.from('todos').update({ completed: !completed }).eq('id', id);
     if (error) { alert(error.message); return; }
@@ -481,7 +493,15 @@ export default function Home() {
                   <div className="flex items-start gap-3">
                     <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5 mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
+                      {editingTodoId === todo.id ? (
+                        <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle); }} className="flex gap-2">
+                          <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} required className="border rounded px-2 py-1 flex-1" />
+                          <button className="text-blue-600 text-sm">Save</button>
+                          <button type="button" onClick={() => setEditingTodoId(null)} className="text-gray-500 text-sm">Cancel</button>
+                        </form>
+                      ) : (
+                        <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
+                      )}
                       <p className="text-xs text-gray-500 mt-1">Created{todo.created_at ? ` ${format(new Date(todo.created_at), 'PPp')}` : ''} by {creator?.nickname || task.creator || 'Unknown'}</p>
                       <label className="block text-xs text-gray-500 mt-2">Assigned to</label>
                       <select value={task.assignee} onChange={e => assignTodo(todo, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm mt-1">
@@ -491,7 +511,10 @@ export default function Home() {
                         ))}
                       </select>
                     </div>
-                    <button onClick={() => deleteTodo(todo.id)} className="text-red-500 text-sm">Delete</button>
+                    <div className="flex flex-col gap-1 text-sm">
+                      <button onClick={() => { setEditingTodoId(todo.id); setEditTaskTitle(task.text); }} className="text-blue-600">Edit</button>
+                      <button onClick={() => deleteTodo(todo.id)} className="text-red-500">Delete</button>
+                    </div>
                   </div>
                 </div>
               );
