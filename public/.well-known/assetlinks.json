@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.renyplumbing.jobmanager",
+    "sha256_cert_fingerprints": ["61:A9:68:E7:35:CE:59:B3:5D:B1:0D:D2:36:BF:BA:A5:4C:A7:6B:AE:0C:23:00:AE:AE:87:33:4C:D7:20:B7:E2"]
+  }
+}]
