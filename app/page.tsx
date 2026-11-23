@@ -302,7 +302,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [calendarView, setCalendarView] = useState<'month' | 'day'>('month');
+  const [calendarView, setCalendarView] = useState<'month' | 'day' | 'tiles'>('month');
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
 
@@ -560,6 +560,7 @@ export default function Home() {
             <div className="flex gap-2 mb-3">
               <button type="button" onClick={() => setCalendarView('month')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'month' ? 'bg-blue-600 text-white' : 'border'}`}>Month</button>
               <button type="button" onClick={() => setCalendarView('day')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'day' ? 'bg-blue-600 text-white' : 'border'}`}>Day</button>
+              <button type="button" onClick={() => setCalendarView('tiles')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'tiles' ? 'bg-blue-600 text-white' : 'border'}`}>Tiles</button>
             </div>
             {calendarView === 'month' ? (
             <>
@@ -599,7 +600,7 @@ export default function Home() {
               </div>
             )}
             </>
-            ) : (
+            ) : calendarView === 'day' ? (
               <div>
                 <div className="flex justify-between items-center mb-3">
                   <h2 className="text-lg font-semibold">{format(selectedDate || new Date(), 'PPP')}</h2>
@@ -613,6 +614,22 @@ export default function Home() {
                   <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {jobs.filter(job => job.scheduled_date && (job.status === 'scheduled' || job.status === 'completed')).slice().sort((a, b) => new Date(a.scheduled_date || 0).getTime() - new Date(b.scheduled_date || 0).getTime()).map(job => (
+                  <button
+                    type="button"
+                    key={job.id}
+                    onClick={() => { setEditingJob(job); setShowJobModal(true); }}
+                    className={`text-left rounded-lg border p-3 min-h-28 ${job.status === 'completed' ? 'bg-green-50 border-green-200' : 'bg-white'}`}
+                  >
+                    <div className="font-medium truncate">{job.customer_name || job.title}</div>
+                    <div className="text-xs text-blue-600 mt-1">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : ''}</div>
+                    {job.description && <div className="text-sm text-gray-600 mt-2 line-clamp-3">{job.description}</div>}
+                  </button>
+                ))}
+                {jobs.filter(job => job.scheduled_date && (job.status === 'scheduled' || job.status === 'completed')).length === 0 && <p className="text-gray-500 text-sm col-span-2">No scheduled jobs yet.</p>}
               </div>
             )}
           </div>
