@@ -361,10 +361,13 @@ export default function Home() {
 
   async function addTodo(title: string, assignee: string, files: File[]) {
     const text = title.trim();
-    if (!text) return;
     const creator = session?.user?.email || '';
     const { photos, failed } = await filesToPhotos(files);
     if (failed.length) alert('Could not save: ' + failed.join(', '));
+    if (!text && photos.length === 0) {
+      alert('Add a task or a photo.');
+      return;
+    }
     const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos) });
     if (error) { alert(error.message); return; }
     setNewTaskTitle('');
@@ -384,11 +387,15 @@ export default function Home() {
 
   async function editTodo(todo: Todo, text: string, files: File[]) {
     const trimmed = text.trim();
-    if (!trimmed) return;
     const parsed = unpackTask(todo.title);
     const { photos, failed } = await filesToPhotos(files);
     if (failed.length) alert('Could not save: ' + failed.join(', '));
-    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee, [...parsed.photos, ...photos]) }).eq('id', todo.id);
+    const nextPhotos = [...parsed.photos, ...photos];
+    if (!trimmed && nextPhotos.length === 0) {
+      alert('Add a task or a photo.');
+      return;
+    }
+    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee, nextPhotos) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     setEditingTodoId(null);
     setEditTaskPhotos([]);
@@ -508,7 +515,7 @@ export default function Home() {
             </div>
             {showTaskForm && (
               <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee, newTaskPhotos); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
-                <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task" required className="w-full border rounded px-3 py-2" />
+                <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task (optional if you add a photo)" className="w-full border rounded px-3 py-2" />
                 <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} className="w-full border rounded px-3 py-2">
                   <option value="">Assign to...</option>
                   {users.map(person => (
@@ -532,7 +539,7 @@ export default function Home() {
                     <div className="flex-1 min-w-0">
                       {editingTodoId === todo.id ? (
                         <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle, editTaskPhotos); }} className="space-y-2">
-                          <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} required className="border rounded px-2 py-1 w-full" />
+                          <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} placeholder="Task (optional if you add a photo)" className="border rounded px-2 py-1 w-full" />
                           <input type="file" accept="image/*" multiple onChange={e => setEditTaskPhotos(Array.from(e.target.files || []))} className="w-full text-sm" />
                           <div className="flex gap-2">
                             <button className="text-blue-600 text-sm">Save</button>
@@ -540,7 +547,7 @@ export default function Home() {
                           </div>
                         </form>
                       ) : (
-                        <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div>
+                        task.text ? <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div> : null
                       )}
                       {task.photos.length > 0 && <PhotoGallery urls={task.photos} />}
                       <p className="text-xs text-gray-500 mt-1">Created{todo.created_at ? ` ${format(new Date(todo.created_at), 'PPp')}` : ''} by {creator?.nickname || task.creator || 'Unknown'}</p>
