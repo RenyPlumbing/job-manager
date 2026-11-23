@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays } from 'date-fns';
 
 type Job = {
   id: string;
@@ -302,6 +302,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [calendarView, setCalendarView] = useState<'month' | 'day'>('month');
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
 
@@ -556,6 +557,12 @@ export default function Home() {
       <main className="p-3 sm:p-4 max-w-7xl mx-auto pb-20">
         {activeTab === 'calendar' && (
           <div>
+            <div className="flex gap-2 mb-3">
+              <button type="button" onClick={() => setCalendarView('month')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'month' ? 'bg-blue-600 text-white' : 'border'}`}>Month</button>
+              <button type="button" onClick={() => setCalendarView('day')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'day' ? 'bg-blue-600 text-white' : 'border'}`}>Day</button>
+            </div>
+            {calendarView === 'month' ? (
+            <>
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-lg font-semibold">{format(currentMonth, 'MMMM yyyy')}</h2>
               <div className="flex gap-1">
@@ -565,15 +572,16 @@ export default function Home() {
               </div>
             </div>
             <div className="grid grid-cols-7 gap-0.5 text-center text-xs font-medium text-gray-500 mb-1">
-              {['S','M','T','W','T','F','S'].map(d => <div key={d}>{d}</div>)}
+              {['S','M','T','W','T','F','S'].map((d, i) => <div key={i}>{d}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-0.5 text-xs">
               {days.map(day => {
                 const dayJobs = jobsOnDate(day);
                 const isToday = isSameDay(day, new Date());
+                const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
                 return (
                   <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
-                    className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
+                    className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-right font-medium">{format(day, 'd')}</div>
                     {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${j.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{j.customer_name || j.title}</div>)}
                     {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
@@ -588,6 +596,23 @@ export default function Home() {
                   <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
+              </div>
+            )}
+            </>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-3">
+                  <h2 className="text-lg font-semibold">{format(selectedDate || new Date(), 'PPP')}</h2>
+                  <div className="flex gap-1">
+                    <button onClick={() => setSelectedDate(subDays(selectedDate || new Date(), 1))} className="px-2 py-1 border rounded text-sm">Prev</button>
+                    <button onClick={() => setSelectedDate(new Date())} className="px-2 py-1 border rounded text-sm">Today</button>
+                    <button onClick={() => setSelectedDate(addDays(selectedDate || new Date(), 1))} className="px-2 py-1 border rounded text-sm">Next</button>
+                  </div>
+                </div>
+                {jobsOnDate(selectedDate || new Date()).map(job => (
+                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                ))}
+                {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
             )}
           </div>
