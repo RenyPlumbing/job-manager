@@ -135,18 +135,10 @@ export default function Home() {
     for (const file of newPhotos) {
       try {
         const blob = await compressImage(file);
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'photo.jpg';
-        const path = `${Date.now()}-${safeName.replace(/\.\w+$/, '')}.jpg`;
-        const { data, error } = await supabase.storage.from('job-photos').upload(path, blob, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        });
-        if (!error && data) {
-          const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path);
-          photoUrls.push(urlData.publicUrl);
-        } else {
-          photoUrls.push(await blobToDataUrl(blob));
-        }
+        const dataUrl = await blobToDataUrl(blob);
+        const base64 = dataUrl.split(',')[1];
+        if (!base64) throw new Error('empty');
+        photoUrls.push('b64:' + base64);
       } catch {
         failed.push(file.name || 'photo');
       }
@@ -364,6 +356,39 @@ function QuickAdd({ onAdd, placeholder }: any) {
   );
 }
 
+function photoSrc(stored: string) {
+  if (!stored) return '';
+  if (stored.startsWith('b64:')) return `data:image/jpeg;base64,${stored.slice(4)}`;
+  return stored;
+}
+
+function PhotoGallery({ urls }: { urls: string[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const list = (urls || []).filter(Boolean);
+  if (!list.length) return null;
+  return (
+    <>
+      <div className="flex gap-2 mt-2 overflow-x-auto">
+        {list.map((url, i) => (
+          <button type="button" key={i} onClick={() => setOpen(i)} className="shrink-0">
+            <img src={photoSrc(url)} alt="Job photo" className="h-20 w-20 object-cover rounded border" />
+          </button>
+        ))}
+      </div>
+      {open !== null && (
+        <div className="fixed inset-0 z-[80] bg-black flex flex-col" onClick={() => setOpen(null)}>
+          <div className="flex justify-between items-center text-white p-3">
+            <button type="button" className="px-3 py-2 text-base" onClick={e => { e.stopPropagation(); setOpen(open > 0 ? open - 1 : list.length - 1); }}>Prev</button>
+            <button type="button" className="px-3 py-2 text-base">Close</button>
+            <button type="button" className="px-3 py-2 text-base" onClick={e => { e.stopPropagation(); setOpen(open < list.length - 1 ? open + 1 : 0); }}>Next</button>
+          </div>
+          <img src={photoSrc(list[open])} alt="Job photo" className="flex-1 min-h-0 w-full object-contain" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+    </>
+  );
+}
+
 function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }: any) {
   return (
     <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
@@ -374,14 +399,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
           {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
           {job.notes && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{job.notes}</p>}
           {job.total_estimate && <p className="text-sm text-green-700">Est: ${Number(job.total_estimate).toFixed(2)}</p>}
-          {job.photos && job.photos.length > 0 && (
-            <div className="flex gap-1 mt-2 overflow-x-auto">
-              {job.photos.slice(0, 3).map((url: string, i: number) => (
-                <img key={i} src={url} alt="" className="h-12 w-12 object-cover rounded" />
-              ))}
-              {job.photos.length > 3 && <span className="text-xs text-gray-500 self-center">+{job.photos.length - 3}</span>}
-            </div>
-          )}
+          {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           {showCompletedCheck && (
             <label className="flex items-center gap-2 mt-3 text-sm font-medium">
               <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed'} onChange={() => onToggleComplete(job.status !== 'completed')} />
@@ -460,11 +478,7 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
           <div>
             <label className="text-sm text-gray-600">Photos</label>
             <input type="file" accept="image/*" multiple onChange={e => setNewPhotos(Array.from(e.target.files || []))} className="w-full text-sm mt-1" />
-            {job?.photos && job.photos.length > 0 && (
-              <div className="flex gap-1 mt-2 overflow-x-auto">
-                {job.photos.map((url: string, i: number) => <img key={i} src={url} alt="" className="h-16 w-16 object-cover rounded" />)}
-              </div>
-            )}
+            {job?.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input type="number" placeholder="Hours" value={form.estimated_hours} onChange={e => setForm({...form, estimated_hours: e.target.value})} className="border rounded px-3 py-2" />
