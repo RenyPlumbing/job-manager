@@ -84,6 +84,18 @@ function packNotes(email: string, notes: string) {
   return `@@email:${trimmed}@@${clean ? `\n${clean}` : ''}`;
 }
 
+function ContactActions({ phone, address }: { phone?: string; address?: string }) {
+  const tel = (phone || '').replace(/[^\d+]/g, '');
+  if (!tel && !address) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {tel && <a href={`tel:${tel}`} className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm">Call</a>}
+      {tel && <a href={`sms:${tel}`} className="px-3 py-1.5 rounded border text-sm">Text</a>}
+      {address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded border text-sm">Directions</a>}
+    </div>
+  );
+}
+
 function customerDirectory(jobs: Job[], saved: Customer[]): Customer[] {
   const map = new Map<string, Customer>();
   for (const job of [...jobs].reverse()) {
@@ -391,6 +403,20 @@ export default function Home() {
                       <p>Phone: {customer.phone || 'None'}</p>
                       <p>Email: {customer.email || 'None'}</p>
                       <p>Address: {customer.address || 'None'}</p>
+                      <ContactActions phone={customer.phone} address={customer.address} />
+                      <h4 className="font-medium pt-2">Jobs</h4>
+                      {jobs.filter(job => (job.customer_name || '').trim().toLowerCase() === key).length === 0 && <p className="text-gray-500">No jobs yet.</p>}
+                      {jobs.filter(job => (job.customer_name || '').trim().toLowerCase() === key).map(job => (
+                        <button
+                          type="button"
+                          key={job.id}
+                          onClick={() => { setEditingJob(job); setShowJobModal(true); }}
+                          className="block w-full text-left bg-gray-50 border rounded px-2 py-2 mb-1"
+                        >
+                          <div className="font-medium">{job.title}</div>
+                          <div className="text-xs text-gray-500">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : 'Unscheduled'} · {job.status}</div>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -491,6 +517,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
         <div className="flex-1 min-w-0">
           <h3 className="font-medium truncate">{job.title}</h3>
           {job.customer_name && <p className="text-sm text-gray-600">{job.customer_name}</p>}
+          <ContactActions phone={job.customer_phone} address={job.address} />
           {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
           {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
           {job.total_estimate && <p className="text-sm text-green-700">Est: ${Number(job.total_estimate).toFixed(2)}</p>}
