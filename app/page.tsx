@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths } from 'date-fns';
 
@@ -130,20 +130,27 @@ function userTitle(email: string, nickname: string) {
 
 const TASK_MARK = '@@task:';
 
-function packTask(text: string, creator: string, assignee: string, photos: string[] = []) {
+function packTask(text: string, creator: string, assignee: string, photos: string[] = [], audio = '') {
   const clean = photos.map(photo => photo.replace(/^b64:/, '')).filter(Boolean);
   const photoPart = clean.length ? `@@photos:${clean.join('|')}` : '';
-  return `${TASK_MARK}${creator}|${assignee}@@${text.trim()}${photoPart}`;
+  const audioPart = audio ? `@@audio:${audio}` : '';
+  return `${TASK_MARK}${creator}|${assignee}@@${text.trim()}${photoPart}${audioPart}`;
 }
 
 function unpackTask(title?: string) {
-  const empty = { text: title || '', creator: '', assignee: '', photos: [] as string[] };
+  const empty = { text: title || '', creator: '', assignee: '', photos: [] as string[], audio: '' };
   if (!title?.startsWith(TASK_MARK)) return empty;
   const rest = title.slice(TASK_MARK.length);
   const splitAt = rest.indexOf('@@');
-  if (splitAt === -1) return { text: title, creator: '', assignee: '', photos: [] as string[] };
+  if (splitAt === -1) return { text: title, creator: '', assignee: '', photos: [] as string[], audio: '' };
   const meta = rest.slice(0, splitAt);
   let body = rest.slice(splitAt + 2);
+  const audioAt = body.indexOf('@@audio:');
+  let audio = '';
+  if (audioAt !== -1) {
+    audio = body.slice(audioAt + '@@audio:'.length);
+    body = body.slice(0, audioAt);
+  }
   let photos: string[] = [];
   const photoAt = body.indexOf('@@photos:');
   if (photoAt !== -1) {
@@ -156,6 +163,7 @@ function unpackTask(title?: string) {
     creator: bar === -1 ? meta : meta.slice(0, bar),
     assignee: bar === -1 ? '' : meta.slice(bar + 1),
     photos,
+    audio,
   };
 }
 
@@ -176,6 +184,69 @@ async function filesToPhotos(files: File[]) {
   return { photos, failed };
 }
 
+function audioSrc(stored: string) {
+  if (stored.startsWith('webm:')) return `data:audio/webm;base64,${stored.slice(5)}`;
+  if (stored.startsWith('mp4:')) return `data:audio/mp4;base64,${stored.slice(4)}`;
+  return '';
+}
+
+function VoiceNote({ audio, onChange }: { audio: string; onChange?: (next: string) => void }) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const timer = useRef<number | null>(null);
+  const chunks = useRef<Blob[]>([]);
+
+  function stop() {
+    recorder.current?.stop();
+    if (timer.current) window.clearInterval(timer.current);
+    timer.current = null;
+    setRecording(false);
+  }
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      alert('This phone cannot record audio here.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => MediaRecorder.isTypeSupported(type)) || '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : undefined);
+      chunks.current = [];
+      rec.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' });
+        const dataUrl = await blobToDataUrl(blob);
+        const base64 = dataUrl.split(',')[1];
+        if (base64) onChange?.(`${(rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}:${base64}`);
+      };
+      rec.start();
+      recorder.current = rec;
+      setRecording(true);
+      setSeconds(0);
+      timer.current = window.setInterval(() => {
+        setSeconds(current => {
+          if (current >= 119) stop();
+          return current + 1;
+        });
+      }, 1000);
+    } catch {
+      alert('Allow the microphone to record a voice note.');
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {onChange && !recording && <button type="button" onClick={start} className="px-3 py-1.5 rounded bg-red-600 text-white text-sm">Record</button>}
+      {recording && <button type="button" onClick={stop} className="px-3 py-1.5 rounded bg-gray-800 text-white text-sm">Stop {seconds}s</button>}
+      {audio && <button type="button" onClick={() => { const player = new Audio(audioSrc(audio)); player.play(); }} className="px-3 py-1.5 rounded border text-sm">Play</button>}
+      {audio && onChange && <button type="button" onClick={() => onChange('')} className="text-sm text-red-500">Remove</button>}
+    </div>
+  );
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -190,6 +261,8 @@ export default function Home() {
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [newTaskPhotos, setNewTaskPhotos] = useState<File[]>([]);
   const [editTaskPhotos, setEditTaskPhotos] = useState<File[]>([]);
+  const [newTaskAudio, setNewTaskAudio] = useState('');
+  const [editTaskAudio, setEditTaskAudio] = useState('');
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [nicknameLoaded, setNicknameLoaded] = useState(false);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
@@ -359,20 +432,21 @@ export default function Home() {
     await fetchData();
   }
 
-  async function addTodo(title: string, assignee: string, files: File[]) {
+  async function addTodo(title: string, assignee: string, files: File[], audio: string) {
     const text = title.trim();
     const creator = session?.user?.email || '';
     const { photos, failed } = await filesToPhotos(files);
     if (failed.length) alert('Could not save: ' + failed.join(', '));
-    if (!text && photos.length === 0) {
-      alert('Add a task or a photo.');
+    if (!text && photos.length === 0 && !audio) {
+      alert('Add a task, a photo, or a recording.');
       return;
     }
-    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos) });
+    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos, audio) });
     if (error) { alert(error.message); return; }
     setNewTaskTitle('');
     setNewTaskAssignee('');
     setNewTaskPhotos([]);
+    setNewTaskAudio('');
     setShowTaskForm(false);
     await fetchData();
   }
@@ -380,25 +454,26 @@ export default function Home() {
   async function assignTodo(todo: Todo, assignee: string) {
     const parsed = unpackTask(todo.title);
     const creator = parsed.creator || session?.user?.email || '';
-    const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee, parsed.photos) }).eq('id', todo.id);
+    const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee, parsed.photos, parsed.audio) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
 
-  async function editTodo(todo: Todo, text: string, files: File[]) {
+  async function editTodo(todo: Todo, text: string, files: File[], audio: string) {
     const trimmed = text.trim();
     const parsed = unpackTask(todo.title);
     const { photos, failed } = await filesToPhotos(files);
     if (failed.length) alert('Could not save: ' + failed.join(', '));
     const nextPhotos = [...parsed.photos, ...photos];
-    if (!trimmed && nextPhotos.length === 0) {
-      alert('Add a task or a photo.');
+    if (!trimmed && nextPhotos.length === 0 && !audio) {
+      alert('Add a task, a photo, or a recording.');
       return;
     }
-    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee, nextPhotos) }).eq('id', todo.id);
+    const { error } = await supabase.from('todos').update({ title: packTask(trimmed, parsed.creator, parsed.assignee, nextPhotos, audio) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
     setEditingTodoId(null);
     setEditTaskPhotos([]);
+    setEditTaskAudio('');
     await fetchData();
   }
 
@@ -511,10 +586,10 @@ export default function Home() {
           <div>
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-lg font-semibold">Task List</h2>
-              <button onClick={() => setShowTaskForm(true)} className="text-sm text-blue-600">+ New Task</button>
+              <button onClick={() => { setShowTaskForm(true); setNewTaskAudio(''); setNewTaskPhotos([]); }} className="text-sm text-blue-600">+ New Task</button>
             </div>
             {showTaskForm && (
-              <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee, newTaskPhotos); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
+              <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee, newTaskPhotos, newTaskAudio); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
                 <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task (optional if you add a photo)" className="w-full border rounded px-3 py-2" />
                 <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)} className="w-full border rounded px-3 py-2">
                   <option value="">Assign to...</option>
@@ -523,6 +598,7 @@ export default function Home() {
                   ))}
                 </select>
                 <input type="file" accept="image/*" multiple onChange={e => setNewTaskPhotos(Array.from(e.target.files || []))} className="w-full text-sm" />
+                <VoiceNote audio={newTaskAudio} onChange={setNewTaskAudio} />
                 <div className="flex gap-2">
                   <button className="bg-blue-600 text-white px-3 py-2 rounded text-sm">Save</button>
                   <button type="button" onClick={() => setShowTaskForm(false)} className="px-3 py-2 border rounded text-sm">Cancel</button>
@@ -538,9 +614,10 @@ export default function Home() {
                     <input type="checkbox" checked={todo.completed} onChange={() => toggleTodo(todo.id, todo.completed)} className="w-5 h-5 mt-1" />
                     <div className="flex-1 min-w-0">
                       {editingTodoId === todo.id ? (
-                        <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle, editTaskPhotos); }} className="space-y-2">
+                        <form onSubmit={e => { e.preventDefault(); editTodo(todo, editTaskTitle, editTaskPhotos, editTaskAudio); }} className="space-y-2">
                           <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)} placeholder="Task (optional if you add a photo)" className="border rounded px-2 py-1 w-full" />
                           <input type="file" accept="image/*" multiple onChange={e => setEditTaskPhotos(Array.from(e.target.files || []))} className="w-full text-sm" />
+                          <VoiceNote audio={editTaskAudio} onChange={setEditTaskAudio} />
                           <div className="flex gap-2">
                             <button className="text-blue-600 text-sm">Save</button>
                             <button type="button" onClick={() => { setEditingTodoId(null); setEditTaskPhotos([]); }} className="text-gray-500 text-sm">Cancel</button>
@@ -550,6 +627,7 @@ export default function Home() {
                         task.text ? <div className={todo.completed ? 'line-through text-gray-400' : ''}>{task.text}</div> : null
                       )}
                       {task.photos.length > 0 && <PhotoGallery urls={task.photos} />}
+                      {task.audio && <div className="mt-2"><VoiceNote audio={task.audio} /></div>}
                       <p className="text-xs text-gray-500 mt-1">Created{todo.created_at ? ` ${format(new Date(todo.created_at), 'PPp')}` : ''} by {creator?.nickname || task.creator || 'Unknown'}</p>
                       <label className="block text-xs text-gray-500 mt-2">Assigned to</label>
                       <select value={task.assignee} onChange={e => assignTodo(todo, e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm mt-1">
@@ -560,7 +638,7 @@ export default function Home() {
                       </select>
                     </div>
                     <div className="flex flex-col gap-1 text-sm">
-                      <button onClick={() => { setEditingTodoId(todo.id); setEditTaskTitle(task.text); setEditTaskPhotos([]); }} className="text-blue-600">Edit</button>
+                      <button onClick={() => { setEditingTodoId(todo.id); setEditTaskTitle(task.text); setEditTaskPhotos([]); setEditTaskAudio(task.audio); }} className="text-blue-600">Edit</button>
                       <button onClick={() => deleteTodo(todo.id)} className="text-red-500">Delete</button>
                     </div>
                   </div>
