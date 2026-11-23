@@ -91,6 +91,8 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [openCustomer, setOpenCustomer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -353,14 +355,32 @@ export default function Home() {
         {activeTab === 'customers' && (
           <div>
             <h2 className="text-lg font-semibold mb-3">Customers</h2>
-            {customers.map(customer => (
-              <div key={customer.name.toLowerCase()} className="bg-white p-3 rounded-lg border mb-2">
-                <h3 className="font-medium">{customer.name}</h3>
-                {customer.phone && <p className="text-sm text-gray-600">{customer.phone}</p>}
-                {customer.address && <p className="text-sm text-gray-600">{customer.address}</p>}
-              </div>
-            ))}
-            {customers.length === 0 && <p className="text-gray-500">None yet. Save a job with a customer name and they will show up here.</p>}
+            <input
+              value={customerQuery}
+              onChange={e => setCustomerQuery(e.target.value)}
+              placeholder="Search customers"
+              className="w-full border rounded px-3 py-2 mb-3"
+            />
+            {customers.filter(customer => customer.name.toLowerCase().includes(customerQuery.trim().toLowerCase())).map(customer => {
+              const key = customer.name.toLowerCase();
+              const open = openCustomer === key;
+              return (
+                <div key={key} className="bg-white rounded-lg border mb-2">
+                  <button type="button" onClick={() => setOpenCustomer(open ? null : key)} className="w-full text-left px-3 py-3 font-medium">
+                    {customer.name}
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-3 text-sm text-gray-700 space-y-1">
+                      <p>Phone: {customer.phone || 'None'}</p>
+                      <p>Address: {customer.address || 'None'}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {customers.filter(customer => customer.name.toLowerCase().includes(customerQuery.trim().toLowerCase())).length === 0 && (
+              <p className="text-gray-500">{customers.length === 0 ? 'None yet. Save a job with a customer name and they will show up here.' : 'No customers match that search.'}</p>
+            )}
           </div>
         )}
 
