@@ -190,12 +190,38 @@ function audioSrc(stored: string) {
   return '';
 }
 
+let stopActiveVoice: (() => void) | null = null;
+
 function VoiceNote({ audio, onChange }: { audio: string; onChange?: (next: string) => void }) {
   const [recording, setRecording] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const timer = useRef<number | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const player = useRef<HTMLAudioElement | null>(null);
+
+  function stopPlayback() {
+    player.current?.pause();
+    if (player.current) player.current.currentTime = 0;
+    player.current = null;
+    if (stopActiveVoice === stopPlayback) stopActiveVoice = null;
+    setPlaying(false);
+  }
+
+  function play() {
+    if (playing) {
+      stopPlayback();
+      return;
+    }
+    stopActiveVoice?.();
+    const next = new Audio(audioSrc(audio));
+    player.current = next;
+    stopActiveVoice = stopPlayback;
+    next.onended = () => stopPlayback();
+    setPlaying(true);
+    next.play();
+  }
 
   function stop() {
     recorder.current?.stop();
@@ -205,6 +231,7 @@ function VoiceNote({ audio, onChange }: { audio: string; onChange?: (next: strin
   }
 
   async function start() {
+    stopPlayback();
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       alert('This phone cannot record audio here.');
       return;
@@ -241,8 +268,12 @@ function VoiceNote({ audio, onChange }: { audio: string; onChange?: (next: strin
     <div className="flex flex-wrap items-center gap-2">
       {onChange && !recording && <button type="button" onClick={start} className="px-3 py-1.5 rounded bg-red-600 text-white text-sm">Record</button>}
       {recording && <button type="button" onClick={stop} className="px-3 py-1.5 rounded bg-gray-800 text-white text-sm">Stop {seconds}s</button>}
-      {audio && <button type="button" onClick={() => { const player = new Audio(audioSrc(audio)); player.play(); }} className="px-3 py-1.5 rounded border text-sm">Play</button>}
-      {audio && onChange && <button type="button" onClick={() => onChange('')} className="text-sm text-red-500">Remove</button>}
+      {audio && (
+        <button type="button" onClick={play} className={`px-3 py-1.5 rounded text-sm ${playing ? 'bg-blue-600 text-white' : 'border'}`}>
+          {playing ? 'Playing' : 'Play'}
+        </button>
+      )}
+      {audio && onChange && <button type="button" onClick={() => { stopPlayback(); onChange(''); }} className="text-sm text-red-500">Remove</button>}
     </div>
   );
 }
