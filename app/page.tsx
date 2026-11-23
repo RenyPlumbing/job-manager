@@ -646,12 +646,6 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
             <input type="file" accept="image/*" multiple onChange={e => setNewPhotos(Array.from(e.target.files || []))} className="w-full text-sm mt-1" />
             {job?.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="number" placeholder="Hours" value={form.estimated_hours} onChange={e => setForm({...form, estimated_hours: e.target.value})} className="border rounded px-3 py-2" />
-            <input type="number" placeholder="Rate" value={form.hourly_rate} onChange={e => setForm({...form, hourly_rate: e.target.value})} className="border rounded px-3 py-2" />
-            <input type="number" placeholder="Materials" value={form.material_cost} onChange={e => setForm({...form, material_cost: e.target.value})} className="border rounded px-3 py-2" />
-            <input type="number" placeholder="Markup %" value={form.markup_percent} onChange={e => setForm({...form, markup_percent: e.target.value})} className="border rounded px-3 py-2" />
-          </div>
           <div className="flex gap-2 pt-2 sticky bottom-0 bg-white">
             <button type="submit" disabled={saving} className="flex-1 bg-blue-600 text-white py-2 rounded disabled:opacity-60">{saving ? 'Saving...' : 'Save'}</button>
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
