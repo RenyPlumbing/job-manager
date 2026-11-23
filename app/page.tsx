@@ -520,7 +520,6 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
           <ContactActions phone={job.customer_phone} address={job.address} />
           {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
           {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
-          {job.total_estimate && <p className="text-sm text-green-700">Est: ${Number(job.total_estimate).toFixed(2)}</p>}
           {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           {showCompletedCheck && (
             <label className="flex items-center gap-2 mt-3 text-sm font-medium">
