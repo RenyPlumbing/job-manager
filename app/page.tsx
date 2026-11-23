@@ -327,7 +327,7 @@ export default function Home() {
                   <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
                     className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-right font-medium">{format(day, 'd')}</div>
-                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${j.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{j.title}</div>)}
+                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${j.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{j.customer_name || j.title}</div>)}
                     {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
                   </div>
                 );
@@ -413,7 +413,7 @@ export default function Home() {
                           onClick={() => { setEditingJob(job); setShowJobModal(true); }}
                           className="block w-full text-left bg-gray-50 border rounded px-2 py-2 mb-1"
                         >
-                          <div className="font-medium">{job.title}</div>
+                          <div className="font-medium">{job.description || job.customer_name || 'Job'}</div>
                           <div className="text-xs text-gray-500">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : 'Unscheduled'} · {job.status}</div>
                         </button>
                       ))}
@@ -515,8 +515,8 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
     <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium truncate">{job.title}</h3>
-          {job.customer_name && <p className="text-sm text-gray-600">{job.customer_name}</p>}
+          <h3 className="font-medium truncate">{job.customer_name || 'No customer'}</h3>
+          {job.description && <p className="text-sm text-gray-700 mt-1">{job.description}</p>}
           <ContactActions phone={job.customer_phone} address={job.address} />
           {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
           {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
@@ -567,7 +567,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
     if (saving) return;
     setSaving(true);
     const data: any = {
-      title: form.title,
+      title: form.customer_name.trim(),
       description: form.description || null,
       status: form.status,
       customer_name: form.customer_name || null,
@@ -594,11 +594,10 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
       <div className="bg-white rounded-t-xl sm:rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <h2 className="text-xl font-semibold mb-4">{job?.id ? 'Edit Job' : 'New Job'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <input required placeholder="Job title *" value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full border rounded px-3 py-2" />
-          <textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full border rounded px-3 py-2" rows={2} />
           <div className="relative">
             <input
-              placeholder="Customer name"
+              required
+              placeholder="Customer name *"
               value={form.customer_name}
               autoComplete="off"
               onFocus={() => setNameOpen(true)}
@@ -637,6 +636,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
           <input placeholder="Phone" value={form.customer_phone} onChange={e => setForm({...form, customer_phone: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input type="email" placeholder="Email" value={form.customer_email} onChange={e => setForm({...form, customer_email: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
+          <textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full border rounded px-3 py-2" rows={2} />
           <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
           <p className="text-xs text-gray-500 -mt-2">Leave the date blank for Unscheduled. A date puts it on the calendar only.</p>
           <textarea placeholder="Notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="w-full border rounded px-3 py-2" rows={3} />
