@@ -36,6 +36,31 @@ function toLocalInput(value?: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function compressImage(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const max = 1280;
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not read that image');
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
+  if (!blob) throw new Error('Could not read that image');
+  return blob;
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -104,18 +129,29 @@ export default function Home() {
 
   async function saveJob(jobData: any, newPhotos: File[]) {
     let jobId = editingJob?.id;
-    let photoUrls = editingJob?.photos || [];
+    const photoUrls = [...(editingJob?.photos || [])];
+    const failed: string[] = [];
 
-    if (newPhotos.length > 0) {
-      for (const file of newPhotos) {
-        const fileName = `${Date.now()}-${file.name}`;
-        const { data, error } = await supabase.storage.from('job-photos').upload(fileName, file);
+    for (const file of newPhotos) {
+      try {
+        const blob = await compressImage(file);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'photo.jpg';
+        const path = `${Date.now()}-${safeName.replace(/\.\w+$/, '')}.jpg`;
+        const { data, error } = await supabase.storage.from('job-photos').upload(path, blob, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        });
         if (!error && data) {
           const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path);
           photoUrls.push(urlData.publicUrl);
+        } else {
+          photoUrls.push(await blobToDataUrl(blob));
         }
+      } catch {
+        failed.push(file.name || 'photo');
       }
     }
+    if (failed.length) alert('Could not save: ' + failed.join(', '));
     jobData.photos = photoUrls;
 
     if (jobId) {
@@ -379,9 +415,12 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
     markup_percent: job?.markup_percent || 20,
   });
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const handleSubmit = (e: any) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
     const data: any = {
       title: form.title,
       description: form.description || null,
@@ -402,7 +441,7 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
       data.scheduled_date = null;
       if (data.status !== 'completed') data.status = 'unscheduled';
     }
-    onSave(data, newPhotos);
+    onSave(data, newPhotos).finally(() => setSaving(false));
   };
 
   return (
@@ -434,7 +473,7 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
             <input type="number" placeholder="Markup %" value={form.markup_percent} onChange={e => setForm({...form, markup_percent: e.target.value})} className="border rounded px-3 py-2" />
           </div>
           <div className="flex gap-2 pt-2 sticky bottom-0 bg-white">
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded">Save</button>
+            <button type="submit" disabled={saving} className="flex-1 bg-blue-600 text-white py-2 rounded disabled:opacity-60">{saving ? 'Saving...' : 'Save'}</button>
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
           </div>
         </form>
