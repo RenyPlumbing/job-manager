@@ -113,12 +113,29 @@ function customerDirectory(jobs: Job[], saved: Customer[]): Customer[] {
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const USER_MARK = '@@user:';
+
+function userRecord(title?: string) {
+  if (!title?.startsWith(USER_MARK)) return null;
+  const rest = title.slice(USER_MARK.length);
+  const bar = rest.indexOf('|');
+  if (bar === -1) return { email: rest, nickname: '' };
+  return { email: rest.slice(0, bar), nickname: rest.slice(bar + 1) };
+}
+
+function userTitle(email: string, nickname: string) {
+  return `${USER_MARK}${email}|${nickname.trim()}`;
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'calendar' | 'unscheduled' | 'completed' | 'todos' | 'customers' | 'estimator'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'unscheduled' | 'completed' | 'todos' | 'customers' | 'users' | 'estimator'>('calendar');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [users, setUsers] = useState<{ email: string; nickname: string }[]>([]);
+  const [nicknameDraft, setNicknameDraft] = useState('');
+  const [nicknameLoaded, setNicknameLoaded] = useState(false);
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
   const [openCustomer, setOpenCustomer] = useState<string | null>(null);
@@ -149,6 +166,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (nicknameLoaded || !session?.user?.email) return;
+    const mine = users.find(person => person.email === session.user.email);
+    if (!mine) return;
+    setNicknameDraft(mine.nickname || '');
+    setNicknameLoaded(true);
+  }, [users, session, nicknameLoaded]);
+
+  useEffect(() => {
     if (!session) return;
     fetchData();
     const channel = supabase
@@ -163,10 +188,34 @@ export default function Home() {
     const { data: jobsData } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
     const { data: todosData } = await supabase.from('todos').select('*').order('created_at', { ascending: false });
     const { data: customerData } = await supabase.from('customers').select('name, phone, address').order('name');
+    const allTodos = todosData || [];
+    let people = allTodos.map(todo => userRecord(todo.title)).filter(Boolean) as { email: string; nickname: string }[];
+    const email = session?.user?.email;
+    if (email && !people.some(person => person.email === email)) {
+      await supabase.from('todos').insert({ title: userTitle(email, '') });
+      people = [...people, { email, nickname: '' }];
+    }
+    people.sort((a, b) => (a.nickname || a.email).localeCompare(b.nickname || b.email));
     setJobs(jobsData || []);
-    setTodos(todosData || []);
+    setTodos(allTodos.filter(todo => !userRecord(todo.title)));
+    setUsers(people);
     setSavedCustomers(customerData || []);
     setLoading(false);
+  }
+
+  async function saveNickname() {
+    const email = session?.user?.email;
+    if (!email) return;
+    const { data, error } = await supabase.from('todos').select('id, title');
+    if (error) { alert(error.message); return; }
+    const mine = (data || []).find(todo => userRecord(todo.title)?.email === email);
+    const title = userTitle(email, nicknameDraft);
+    const result = mine
+      ? await supabase.from('todos').update({ title }).eq('id', mine.id)
+      : await supabase.from('todos').insert({ title });
+    if (result.error) { alert(result.error.message); return; }
+    setNicknameLoaded(true);
+    await fetchData();
   }
 
   async function rememberCustomer(jobData: any) {
@@ -294,7 +343,7 @@ export default function Home() {
 
       {/* Mobile-friendly nav */}
       <nav className="bg-white border-b flex overflow-x-auto px-2 sticky top-[57px] z-10">
-        {(['calendar', 'unscheduled', 'completed', 'todos', 'customers', 'estimator'] as const).map(tab => (
+        {(['calendar', 'unscheduled', 'completed', 'todos', 'customers', 'users', 'estimator'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-3 py-3 text-sm font-medium capitalize whitespace-nowrap flex-shrink-0 ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
             {tab === 'todos' ? 'Task List' : tab}
@@ -425,6 +474,26 @@ export default function Home() {
             {customers.filter(customer => customer.name.toLowerCase().includes(customerQuery.trim().toLowerCase())).length === 0 && (
               <p className="text-gray-500">{customers.length === 0 ? 'None yet. Save a job with a customer name and they will show up here.' : 'No customers match that search.'}</p>
             )}
+          </div>
+        )}
+
+        {activeTab === 'users' && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Users</h2>
+            <div className="bg-white p-3 rounded-lg border mb-4">
+              <label className="text-sm text-gray-600">Your nickname</label>
+              <div className="flex gap-2 mt-2">
+                <input value={nicknameDraft} onChange={e => setNicknameDraft(e.target.value)} placeholder="Nickname" className="border rounded px-3 py-2 flex-1" />
+                <button onClick={saveNickname} className="bg-blue-600 text-white px-3 py-2 rounded">Save</button>
+              </div>
+            </div>
+            {users.map(person => (
+              <div key={person.email} className="bg-white p-3 rounded-lg border mb-2">
+                <h3 className="font-medium">{person.nickname || person.email}</h3>
+                {person.nickname && <p className="text-sm text-gray-500">{person.email}</p>}
+              </div>
+            ))}
+            {users.length === 0 && <p className="text-gray-500">No users yet.</p>}
           </div>
         )}
 
