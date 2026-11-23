@@ -61,12 +61,36 @@ async function compressImage(file: File): Promise<Blob> {
   return blob;
 }
 
+type Customer = {
+  name: string;
+  phone?: string;
+  address?: string;
+};
+
+function customerDirectory(jobs: Job[], saved: Customer[]): Customer[] {
+  const map = new Map<string, Customer>();
+  for (const job of [...jobs].reverse()) {
+    const name = (job.customer_name || '').trim();
+    const key = name.toLowerCase();
+    if (!key) continue;
+    map.set(key, { name, phone: job.customer_phone || '', address: job.address || '' });
+  }
+  for (const customer of saved) {
+    const name = (customer.name || '').trim();
+    const key = name.toLowerCase();
+    if (!key) continue;
+    map.set(key, { name, phone: customer.phone || '', address: customer.address || '' });
+  }
+  return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'calendar' | 'unscheduled' | 'completed' | 'todos' | 'estimator'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'unscheduled' | 'completed' | 'todos' | 'customers' | 'estimator'>('calendar');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -107,9 +131,26 @@ export default function Home() {
   async function fetchData() {
     const { data: jobsData } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
     const { data: todosData } = await supabase.from('todos').select('*').order('created_at', { ascending: false });
+    const { data: customerData } = await supabase.from('customers').select('name, phone, address').order('name');
     setJobs(jobsData || []);
     setTodos(todosData || []);
+    setSavedCustomers(customerData || []);
     setLoading(false);
+  }
+
+  async function rememberCustomer(jobData: any) {
+    const name = (jobData.customer_name || '').trim();
+    if (!name) return;
+    const phone = jobData.customer_phone || null;
+    const address = jobData.address || null;
+    const { data, error } = await supabase.from('customers').select('id, name').ilike('name', name);
+    if (error) return;
+    const existing = (data || []).find((row: any) => row.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      await supabase.from('customers').update({ name, phone, address }).eq('id', existing.id);
+    } else {
+      await supabase.from('customers').insert({ name, phone, address });
+    }
   }
 
   async function signIn(email: string, password: string) {
@@ -153,6 +194,7 @@ export default function Home() {
       const { error } = await supabase.from('jobs').insert(jobData);
       if (error) { alert(error.message); return; }
     }
+    await rememberCustomer(jobData);
     setShowJobModal(false);
     setEditingJob(null);
     if (jobData.scheduled_date && jobData.status === 'scheduled') {
@@ -206,6 +248,7 @@ export default function Home() {
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const customers = customerDirectory(jobs, savedCustomers);
   const jobsOnDate = (date: Date) => jobs.filter(j => j.scheduled_date && (j.status === 'scheduled' || j.status === 'completed') && isSameDay(new Date(j.scheduled_date), date));
 
   return (
@@ -220,7 +263,7 @@ export default function Home() {
 
       {/* Mobile-friendly nav */}
       <nav className="bg-white border-b flex overflow-x-auto px-2 sticky top-[57px] z-10">
-        {(['calendar', 'unscheduled', 'completed', 'todos', 'estimator'] as const).map(tab => (
+        {(['calendar', 'unscheduled', 'completed', 'todos', 'customers', 'estimator'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-3 py-3 text-sm font-medium capitalize whitespace-nowrap flex-shrink-0 ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
             {tab === 'todos' ? 'Task List' : tab}
@@ -307,6 +350,20 @@ export default function Home() {
           </div>
         )}
 
+        {activeTab === 'customers' && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Customers</h2>
+            {customers.map(customer => (
+              <div key={customer.name.toLowerCase()} className="bg-white p-3 rounded-lg border mb-2">
+                <h3 className="font-medium">{customer.name}</h3>
+                {customer.phone && <p className="text-sm text-gray-600">{customer.phone}</p>}
+                {customer.address && <p className="text-sm text-gray-600">{customer.address}</p>}
+              </div>
+            ))}
+            {customers.length === 0 && <p className="text-gray-500">None yet. Save a job with a customer name and they will show up here.</p>}
+          </div>
+        )}
+
         {activeTab === 'estimator' && (
           <div className="bg-white p-4 sm:p-6 rounded-xl border max-w-md mx-auto">
             <h2 className="text-lg font-semibold mb-4">Estimator</h2>
@@ -322,7 +379,7 @@ export default function Home() {
         )}
       </main>
 
-      {showJobModal && <JobModal job={editingJob} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={activeTab === 'calendar' ? selectedDate : null} />}
+      {showJobModal && <JobModal job={editingJob} customers={customers} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={activeTab === 'calendar' ? selectedDate : null} />}
     </div>
   );
 }
@@ -417,7 +474,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
   );
 }
 
-function JobModal({ job, onClose, onSave, defaultDate }: any) {
+function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
   const [form, setForm] = useState({
     title: job?.title || '',
     description: job?.description || '',
@@ -434,6 +491,11 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
   });
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
+  const [nameOpen, setNameOpen] = useState(false);
+  const nameQuery = form.customer_name.trim().toLowerCase();
+  const nameMatches = nameQuery
+    ? (customers || []).filter((customer: Customer) => customer.name.toLowerCase().includes(nameQuery)).slice(0, 8)
+    : [];
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
@@ -469,7 +531,43 @@ function JobModal({ job, onClose, onSave, defaultDate }: any) {
         <form onSubmit={handleSubmit} className="space-y-3">
           <input required placeholder="Job title *" value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full border rounded px-3 py-2" />
           <textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full border rounded px-3 py-2" rows={2} />
-          <input placeholder="Customer name" value={form.customer_name} onChange={e => setForm({...form, customer_name: e.target.value})} className="w-full border rounded px-3 py-2" />
+          <div className="relative">
+            <input
+              placeholder="Customer name"
+              value={form.customer_name}
+              autoComplete="off"
+              onFocus={() => setNameOpen(true)}
+              onBlur={() => setTimeout(() => setNameOpen(false), 150)}
+              onChange={e => { setForm({...form, customer_name: e.target.value}); setNameOpen(true); }}
+              className="w-full border rounded px-3 py-2"
+            />
+            {nameOpen && nameMatches.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 mt-1 bg-white border rounded shadow max-h-48 overflow-y-auto">
+                {nameMatches.map((customer: Customer) => (
+                  <button
+                    type="button"
+                    key={customer.name.toLowerCase()}
+                    className="block w-full text-left px-3 py-2 hover:bg-blue-50"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      setForm({
+                        ...form,
+                        customer_name: customer.name,
+                        customer_phone: customer.phone || '',
+                        address: customer.address || '',
+                      });
+                      setNameOpen(false);
+                    }}
+                  >
+                    <div className="font-medium">{customer.name}</div>
+                    {(customer.phone || customer.address) && (
+                      <div className="text-xs text-gray-500 truncate">{[customer.phone, customer.address].filter(Boolean).join(' · ')}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <input placeholder="Phone" value={form.customer_phone} onChange={e => setForm({...form, customer_phone: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
