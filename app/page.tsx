@@ -210,7 +210,7 @@ async function notifyAssignedTasks(allTodos: Todo[], email: string, setAlerts: (
     const recent = !!todo.created_at && Date.now() - new Date(todo.created_at).getTime() < 2 * 60 * 1000;
     if (seeded || recent) fresh.push(taskNoticeBody(task));
   }
-  localStorage.setItem(storageKey, JSON.stringify([...next].slice(-300)));
+  localStorage.setItem(storageKey, JSON.stringify(Array.from(next).slice(-300)));
   if (!seeded) localStorage.setItem('reny-task-notices-seeded', '1');
   if (!fresh.length) return;
   setAlerts(fresh);
