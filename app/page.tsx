@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { format, startOfMonth, endOfMonth, startOfWeek, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 
 type Job = {
   id: string;
@@ -700,7 +700,7 @@ export default function Home() {
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const days = eachDayOfInterval({ start: startOfWeek(monthStart, { weekStartsOn: 0 }), end: endOfWeek(monthEnd, { weekStartsOn: 0 }) });
   const customers = customerDirectory(jobs, savedCustomers);
   const jobsOnDate = (date: Date) => jobs.filter(job => (job.status === 'scheduled' || job.status === 'completed') && [job.scheduled_date, ...readExtraDates(job.notes)].some(value => value && isSameDay(new Date(value), date)));
 
