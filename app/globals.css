@@ -44,3 +44,19 @@ html.dark select {
 html.dark .bg-blue-50 {
   background-color: #1e3a5f !important;
 }
+html.dark .job-card,
+html.dark .job-card h3,
+html.dark .job-card p {
+  color: #ffffff !important;
+}
+html.dark .job-card.bg-orange-100,
+html.dark .job-card.bg-orange-100 h3,
+html.dark .job-card.bg-orange-100 p,
+html.dark .job-card.bg-yellow-100,
+html.dark .job-card.bg-yellow-100 h3,
+html.dark .job-card.bg-yellow-100 p,
+html.dark .job-card.bg-green-100,
+html.dark .job-card.bg-green-100 h3,
+html.dark .job-card.bg-green-100 p {
+  color: #111827 !important;
+}
