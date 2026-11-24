@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 
 type Job = {
   id: string;
@@ -278,6 +278,44 @@ function VoiceNote({ audio, onChange }: { audio: string; onChange?: (next: strin
   );
 }
 
+const WEEK_START_HOUR = 6;
+const WEEK_END_HOUR = 20;
+const HOUR_HEIGHT = 52;
+
+function placeDayJobs(dayJobs: Job[]) {
+  const windowStart = WEEK_START_HOUR * 60;
+  const windowEnd = WEEK_END_HOUR * 60;
+  const items = dayJobs.map(job => {
+    const start = new Date(job.scheduled_date || '');
+    const hours = Number(job.estimated_hours) > 0 ? Number(job.estimated_hours) : 1;
+    let a = start.getHours() * 60 + start.getMinutes();
+    let b = a + Math.round(hours * 60);
+    a = Math.max(windowStart, Math.min(a, windowEnd - 28));
+    b = Math.max(a + 28, Math.min(b, windowEnd));
+    return { job, a, b, col: 0, cols: 1 };
+  }).sort((x, y) => x.a - y.a || y.b - x.b);
+  const clusters: typeof items[] = [];
+  for (const item of items) {
+    const cluster = clusters.find(group => group.some(other => other.a < item.b && item.a < other.b));
+    if (cluster) cluster.push(item);
+    else clusters.push([item]);
+  }
+  for (const cluster of clusters) {
+    const ends: number[] = [];
+    for (const item of cluster) {
+      let col = ends.findIndex(end => end <= item.a);
+      if (col === -1) {
+        col = ends.length;
+        ends.push(item.b);
+      } else ends[col] = item.b;
+      item.col = col;
+    }
+    const cols = Math.max(1, ...cluster.map(item => item.col + 1));
+    cluster.forEach(item => { item.cols = cols; });
+  }
+  return items;
+}
+
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -302,7 +340,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [calendarView, setCalendarView] = useState<'month' | 'day' | 'tiles'>('month');
+  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'tiles'>('month');
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
 
@@ -559,6 +597,7 @@ export default function Home() {
           <div>
             <div className="flex gap-2 mb-3">
               <button type="button" onClick={() => setCalendarView('month')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'month' ? 'bg-blue-600 text-white' : 'border'}`}>Month</button>
+              <button type="button" onClick={() => setCalendarView('week')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'week' ? 'bg-blue-600 text-white' : 'border'}`}>Week</button>
               <button type="button" onClick={() => setCalendarView('day')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'day' ? 'bg-blue-600 text-white' : 'border'}`}>Day</button>
               <button type="button" onClick={() => setCalendarView('tiles')} className={`px-3 py-1.5 rounded text-sm ${calendarView === 'tiles' ? 'bg-blue-600 text-white' : 'border'}`}>Tiles</button>
             </div>
@@ -600,6 +639,13 @@ export default function Home() {
               </div>
             )}
             </>
+            ) : calendarView === 'week' ? (
+              <WeekView
+                selectedDate={selectedDate || new Date()}
+                jobsOnDate={jobsOnDate}
+                onShift={next => setSelectedDate(next)}
+                onOpen={job => { setEditingJob(job); setShowJobModal(true); }}
+              />
             ) : calendarView === 'day' ? (
               <div>
                 <div className="flex justify-between items-center mb-3">
@@ -1010,6 +1056,66 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
             <button type="button" onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate: Date; jobsOnDate: (date: Date) => Job[]; onShift: (next: Date) => void; onOpen: (job: Job) => void }) {
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
+  const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
+  const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
+  const gridHeight = hours.length * HOUR_HEIGHT;
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-lg font-semibold">{format(weekStart, 'MMM d')} – {format(addDays(weekStart, 6), 'MMM d')}</h2>
+        <div className="flex gap-1">
+          <button onClick={() => onShift(subWeeks(selectedDate, 1))} className="px-2 py-1 border rounded text-sm">Prev</button>
+          <button onClick={() => onShift(new Date())} className="px-2 py-1 border rounded text-sm">Today</button>
+          <button onClick={() => onShift(addWeeks(selectedDate, 1))} className="px-2 py-1 border rounded text-sm">Next</button>
+        </div>
+      </div>
+      <div className="overflow-auto max-h-[70vh] border rounded bg-white">
+        <div className="min-w-[680px]">
+          <div className="sticky top-0 z-10 grid bg-white border-b" style={{ gridTemplateColumns: '44px repeat(7, 1fr)' }}>
+            <div />
+            {weekDays.map(day => (
+              <div key={day.toISOString()} className="text-center py-1 border-l">
+                <div className="text-[10px] uppercase text-gray-500">{format(day, 'EEE')}</div>
+                <div className={`text-sm font-semibold mx-auto ${isSameDay(day, new Date()) ? 'bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center' : ''}`}>{format(day, 'd')}</div>
+              </div>
+            ))}
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: '44px repeat(7, 1fr)', height: gridHeight }}>
+            <div>
+              {hours.map(hour => (
+                <div key={hour} className="text-[10px] text-gray-400 text-right pr-1" style={{ height: HOUR_HEIGHT }}>{format(new Date(2000, 0, 1, hour), 'h a')}</div>
+              ))}
+            </div>
+            {weekDays.map(day => (
+              <div key={day.toISOString()} className="relative border-l" style={{ height: gridHeight }}>
+                {hours.map(hour => <div key={hour} className="border-t border-gray-200" style={{ height: HOUR_HEIGHT }} />)}
+                {placeDayJobs(jobsOnDate(day)).map(item => (
+                  <button
+                    type="button"
+                    key={item.job.id}
+                    onClick={() => onOpen(item.job)}
+                    className={`absolute overflow-hidden rounded-md px-1 py-0.5 text-left text-[10px] leading-tight text-white ${item.job.status === 'completed' ? 'bg-green-600' : 'bg-indigo-500'}`}
+                    style={{
+                      top: ((item.a - WEEK_START_HOUR * 60) / 60) * HOUR_HEIGHT,
+                      height: Math.max(18, ((item.b - item.a) / 60) * HOUR_HEIGHT - 2),
+                      left: `calc(${(item.col / item.cols) * 100}% + 1px)`,
+                      width: `calc(${100 / item.cols}% - 3px)`,
+                    }}
+                  >
+                    {item.job.address || item.job.customer_name || item.job.title}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
