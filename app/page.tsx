@@ -861,20 +861,12 @@ export default function Home() {
                 onOpen={job => setViewingJob(job)}
               />
             ) : calendarView === 'day' ? (
-              <div>
-                <div className="flex justify-between items-center mb-3">
-                  <h2 className="text-lg font-semibold">{format(selectedDate || new Date(), 'PPP')}</h2>
-                  <div className="flex gap-1">
-                    <button onClick={() => setSelectedDate(subDays(selectedDate || new Date(), 1))} className="px-2 py-1 border rounded text-sm">Prev</button>
-                    <button onClick={() => setSelectedDate(new Date())} className="px-2 py-1 border rounded text-sm">Today</button>
-                    <button onClick={() => setSelectedDate(addDays(selectedDate || new Date(), 1))} className="px-2 py-1 border rounded text-sm">Next</button>
-                  </div>
-                </div>
-                {jobsOnDate(selectedDate || new Date()).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onOpen={() => setViewingJob(job)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
-                ))}
-                {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
-              </div>
+              <DayView
+                selectedDate={selectedDate || new Date()}
+                jobsOnDate={jobsOnDate}
+                onShift={next => setSelectedDate(next)}
+                onOpen={job => setViewingJob(job)}
+              />
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {jobs.filter(job => (job.status === 'scheduled' || job.status === 'completed') && (job.scheduled_date || readExtraDates(job.notes).length)).slice().sort((a, b) => new Date(a.scheduled_date || readExtraDates(a.notes)[0] || 0).getTime() - new Date(b.scheduled_date || readExtraDates(b.notes)[0] || 0).getTime()).map(job => (
@@ -1399,6 +1391,66 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
   );
 }
 
+function scheduleBlockClass(job: Job) {
+  const key = invoiceKey(job);
+  if (key) return invoiceColor(key).block;
+  return 'bg-violet-300 text-violet-950';
+}
+
+function scheduleLabel(job: Job) {
+  return job.address || job.customer_name || 'Job';
+}
+
+function DayView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate: Date; jobsOnDate: (date: Date) => Job[]; onShift: (next: Date) => void; onOpen: (job: Job) => void }) {
+  const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
+  const row = 64;
+  const gridHeight = hours.length * row;
+  const items = placeDayJobs(jobsOnDate(selectedDate), selectedDate);
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-3">
+        <div>
+          <div className="text-xs uppercase text-gray-500">{format(selectedDate, 'EEEE')}</div>
+          <h2 className={`text-3xl font-semibold leading-none ${isSameDay(selectedDate, new Date()) ? 'text-blue-600' : ''}`}>{format(selectedDate, 'd')}</h2>
+        </div>
+        <div className="flex gap-1">
+          <button onClick={() => onShift(subDays(selectedDate, 1))} className="px-2 py-1 border rounded text-sm">Prev</button>
+          <button onClick={() => onShift(new Date())} className="px-2 py-1 border rounded text-sm">Today</button>
+          <button onClick={() => onShift(addDays(selectedDate, 1))} className="px-2 py-1 border rounded text-sm">Next</button>
+        </div>
+      </div>
+      <div className="overflow-auto max-h-[75vh] border rounded bg-white">
+        <div className="grid" style={{ gridTemplateColumns: '52px 1fr', height: gridHeight }}>
+          <div>
+            {hours.map(hour => (
+              <div key={hour} className="text-[11px] text-gray-400 text-right pr-2" style={{ height: row }}>{format(new Date(2000, 0, 1, hour), 'h a')}</div>
+            ))}
+          </div>
+          <div className="relative border-l" style={{ height: gridHeight }}>
+            {hours.map(hour => <div key={hour} className="border-t border-gray-200" style={{ height: row }} />)}
+            {items.map(item => (
+              <button
+                type="button"
+                key={item.job.id}
+                onClick={() => onOpen(item.job)}
+                className={`absolute overflow-hidden rounded-2xl px-2 py-1 text-left text-sm leading-tight font-medium ${scheduleBlockClass(item.job)}`}
+                style={{
+                  top: ((item.a - WEEK_START_HOUR * 60) / 60) * row,
+                  height: Math.max(36, ((item.b - item.a) / 60) * row - 6),
+                  left: `calc(${(item.col / item.cols) * 100}% + 6px)`,
+                  width: `calc(${100 / item.cols}% - 12px)`,
+                }}
+              >
+                <span className="break-words">{scheduleLabel(item.job)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate: Date; jobsOnDate: (date: Date) => Job[]; onShift: (next: Date) => void; onOpen: (job: Job) => void }) {
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
@@ -1420,8 +1472,8 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
             <div />
             {weekDays.map(day => (
               <div key={day.toISOString()} className="text-center py-1 border-l">
-                <div className="text-[10px] uppercase text-gray-500">{format(day, 'EEE')}</div>
-                <div className={`text-sm font-semibold mx-auto ${isSameDay(day, new Date()) ? 'bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center' : ''}`}>{format(day, 'd')}</div>
+                <div className={`text-lg font-semibold leading-none ${isSameDay(day, new Date()) ? 'text-blue-600' : ''}`}>{format(day, 'd')}</div>
+                <div className="text-[10px] text-gray-500">{format(day, 'EEE')}</div>
               </div>
             ))}
           </div>
@@ -1439,7 +1491,7 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
                     type="button"
                     key={item.job.id}
                     onClick={() => onOpen(item.job)}
-                    className={`absolute overflow-hidden rounded-md px-1 py-0.5 text-left text-[10px] leading-tight ${invoiceColor(invoiceKey(item.job)).block}`}
+                    className={`absolute overflow-hidden rounded-2xl px-1 py-0.5 text-left text-[11px] leading-tight font-medium ${scheduleBlockClass(item.job)}`}
                     style={{
                       top: ((item.a - WEEK_START_HOUR * 60) / 60) * HOUR_HEIGHT,
                       height: Math.max(18, ((item.b - item.a) / 60) * HOUR_HEIGHT - 2),
@@ -1447,9 +1499,7 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
                       width: `calc(${100 / item.cols}% - 3px)`,
                     }}
                   >
-                    <div className="font-semibold truncate">{item.job.customer_name || 'No name'}</div>
-                    <div className="truncate">{item.job.address || 'No address'}</div>
-                    <div className="truncate">{item.job.description || 'No description'}</div>
+                    <span className="break-words">{scheduleLabel(item.job)}</span>
                   </button>
                 ))}
               </div>
