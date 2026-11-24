@@ -5,3 +5,42 @@
 body {
   @apply bg-gray-50 text-gray-900;
 }
+
+html.dark body,
+html.dark .bg-gray-50 {
+  background-color: #0f172a !important;
+  color: #e5e7eb;
+}
+html.dark .bg-white {
+  background-color: #1e293b !important;
+}
+html.dark .bg-gray-100 {
+  background-color: #334155 !important;
+}
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-gray-700 {
+  color: #e5e7eb !important;
+}
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-gray-400 {
+  color: #cbd5e1 !important;
+}
+html.dark .border,
+html.dark .border-b,
+html.dark .border-t,
+html.dark .border-l,
+html.dark .border-gray-200 {
+  border-color: #334155 !important;
+}
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #475569;
+}
+html.dark .bg-blue-50 {
+  background-color: #1e3a5f !important;
+}
