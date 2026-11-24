@@ -218,7 +218,7 @@ async function notifyAssignedTasks(allTodos: Todo[], email: string, setAlerts: (
   for (const body of fresh) {
     try {
       const reg = await navigator.serviceWorker?.getRegistration();
-      if (reg) await reg.showNotification('Task assigned to you', { body, icon: '/icon-192.png', tag: 'reny-task-' + body.slice(0, 40) });
+      if (reg) await reg.showNotification('Task assigned to you', { body, icon: '/icon-192.png', badge: '/notification-icon.png', tag: 'reny-task-' + body.slice(0, 40) });
       else new Notification('Task assigned to you', { body, icon: '/icon-192.png' });
     } catch {
       try { new Notification('Task assigned to you', { body, icon: '/icon-192.png' }); } catch { /* alerts blocked */ }
