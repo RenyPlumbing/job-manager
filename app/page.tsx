@@ -70,19 +70,27 @@ type Customer = {
 };
 
 function readEmail(notes?: string) {
-  const match = (notes || '').match(/^@@email:(.*?)@@\n?/);
+  const match = (notes || '').match(/@@email:(.*?)@@/);
+  return match ? match[1] : '';
+}
+
+function readInvoice(notes?: string) {
+  const match = (notes || '').match(/@@invoice:(needs|sent|paid)@@/);
   return match ? match[1] : '';
 }
 
 function readNotes(notes?: string) {
-  return (notes || '').replace(/^@@email:.*?@@\n?/, '');
+  return (notes || '')
+    .replace(/@@invoice:(needs|sent|paid)@@\n?/g, '')
+    .replace(/@@email:.*?@@\n?/g, '');
 }
 
-function packNotes(email: string, notes: string) {
+function packNotes(email: string, notes: string, invoice = '') {
   const clean = readNotes(notes).trim();
-  const trimmed = email.trim();
-  if (!trimmed) return clean || null;
-  return `@@email:${trimmed}@@${clean ? `\n${clean}` : ''}`;
+  const inv = invoice === 'needs' || invoice === 'sent' || invoice === 'paid' ? `@@invoice:${invoice}@@\n` : '';
+  const mail = email.trim() ? `@@email:${email.trim()}@@` : '';
+  const body = `${inv}${mail}${mail && clean ? '\n' : ''}${clean}`.trim();
+  return body || null;
 }
 
 function ContactActions({ phone, address }: { phone?: string; address?: string }) {
@@ -337,6 +345,7 @@ export default function Home() {
   const [savedCustomers, setSavedCustomers] = useState<Customer[]>([]);
   const [customerQuery, setCustomerQuery] = useState('');
   const [openCustomer, setOpenCustomer] = useState<string | null>(null);
+  const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'needs' | 'sent' | 'paid'>('all');
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
@@ -490,7 +499,18 @@ export default function Home() {
   }
 
   async function setJobCompleted(id: string, completed: boolean) {
-    const { error } = await supabase.from('jobs').update({ status: completed ? 'completed' : 'scheduled' }).eq('id', id);
+    const job = jobs.find(item => item.id === id);
+    const patch: any = { status: completed ? 'completed' : 'scheduled' };
+    if (completed && job && !readInvoice(job.notes)) {
+      patch.notes = packNotes(readEmail(job.notes), readNotes(job.notes), 'needs');
+    }
+    const { error } = await supabase.from('jobs').update(patch).eq('id', id);
+    if (error) { alert(error.message); return; }
+    await fetchData();
+  }
+
+  async function setInvoice(job: Job, invoice: string) {
+    const { error } = await supabase.from('jobs').update({ notes: packNotes(readEmail(job.notes), readNotes(job.notes), invoice) }).eq('id', job.id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
@@ -633,7 +653,7 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onInvoice={(invoice: string) => setInvoice(job, invoice)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -657,7 +677,7 @@ export default function Home() {
                   </div>
                 </div>
                 {jobsOnDate(selectedDate || new Date()).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onInvoice={(invoice: string) => setInvoice(job, invoice)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -694,10 +714,15 @@ export default function Home() {
         {activeTab === 'completed' && (
           <div>
             <h2 className="text-lg font-semibold mb-3">Completed Jobs</h2>
-            {jobs.filter(j => j.status === 'completed').map(job => (
-              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+            <div className="flex flex-wrap gap-2 mb-3">
+              {([['all', 'All'], ['needs', 'Needs invoice'], ['sent', 'Invoice sent'], ['paid', 'Paid']] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setInvoiceFilter(key)} className={`px-3 py-1.5 rounded text-sm ${invoiceFilter === key ? 'bg-blue-600 text-white' : 'border'}`}>{label}</button>
+              ))}
+            </div>
+            {jobs.filter(job => job.status === 'completed' && (invoiceFilter === 'all' || (readInvoice(job.notes) || 'needs') === invoiceFilter)).map(job => (
+              <JobCard key={job.id} job={job} onInvoice={(invoice: string) => setInvoice(job, invoice)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
             ))}
-            {jobs.filter(j => j.status === 'completed').length === 0 && <p className="text-gray-500">None yet</p>}
+            {jobs.filter(job => job.status === 'completed' && (invoiceFilter === 'all' || (readInvoice(job.notes) || 'needs') === invoiceFilter)).length === 0 && <p className="text-gray-500">None yet</p>}
           </div>
         )}
 
@@ -916,7 +941,13 @@ function PhotoGallery({ urls }: { urls: string[] }) {
   );
 }
 
-function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }: any) {
+function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, onInvoice }: any) {
+  const invoice = readInvoice(job.notes) || (job.status === 'completed' ? 'needs' : '');
+  const invoiceStyle: Record<string, string> = {
+    needs: 'bg-amber-500 text-white border-amber-500',
+    sent: 'bg-blue-600 text-white border-blue-600',
+    paid: 'bg-green-600 text-white border-green-600',
+  };
   return (
     <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
       <div className="flex justify-between items-start gap-2">
@@ -932,6 +963,13 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck }
               <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed'} onChange={() => onToggleComplete(job.status !== 'completed')} />
               Completed
             </label>
+          )}
+          {job.status === 'completed' && onInvoice && (
+            <div className="flex flex-wrap gap-1 mt-3">
+              {([['needs', 'Needs invoice'], ['sent', 'Invoice sent'], ['paid', 'Paid']] as const).map(([key, label]) => (
+                <button type="button" key={key} onClick={() => onInvoice(key)} className={`px-2 py-1 rounded text-xs border ${invoice === key ? invoiceStyle[key] : 'bg-white'}`}>{label}</button>
+              ))}
+            </div>
           )}
         </div>
         <div className="flex flex-col gap-1 text-sm flex-shrink-0">
@@ -979,7 +1017,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
       customer_name: form.customer_name || null,
       customer_phone: form.customer_phone || null,
       address: form.address || null,
-      notes: packNotes(form.customer_email, form.notes),
+      notes: packNotes(form.customer_email, form.notes, readInvoice(job?.notes)),
       estimated_hours: form.estimated_hours ? +form.estimated_hours : null,
       hourly_rate: form.hourly_rate ? +form.hourly_rate : null,
       material_cost: form.material_cost ? +form.material_cost : null,
