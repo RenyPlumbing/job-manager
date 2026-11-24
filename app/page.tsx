@@ -605,14 +605,14 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-4 py-3 flex justify-between items-center sticky top-0 z-10">
         <div>
-          <h1 className="text-xl font-bold">Job Manager</h1>
+          <img src="/logo.png" alt="Reny Plumbing" className="h-9 w-auto" />
           <p className="text-xs text-gray-500 truncate max-w-[200px] sm:max-w-none">{session.user.email}</p>
         </div>
         <button onClick={signOut} className="text-sm text-gray-600 px-2 py-1">Sign out</button>
       </header>
 
       {/* Mobile-friendly nav */}
-      <nav className="bg-white border-b flex overflow-x-auto px-2 sticky top-[57px] z-10">
+      <nav className="bg-white border-b flex overflow-x-auto px-2 sticky top-[68px] z-10">
         {(['calendar', 'unscheduled', 'completed', 'todos', 'customers', 'users', 'estimator'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-3 py-3 text-sm font-medium capitalize whitespace-nowrap flex-shrink-0 ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
@@ -898,7 +898,7 @@ function AuthScreen({ onSignIn, onSignUp }: any) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white p-6 rounded-xl border max-w-md w-full">
-        <h1 className="text-2xl font-bold mb-6 text-center">Job Manager</h1>
+        <img src="/logo.png" alt="Reny Plumbing" className="h-16 w-auto mx-auto mb-6" />
         <form onSubmit={e => { e.preventDefault(); isSignUp ? onSignUp(email, password) : onSignIn(email, password); }} className="space-y-4">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full border rounded px-3 py-2" />
           <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full border rounded px-3 py-2" />
