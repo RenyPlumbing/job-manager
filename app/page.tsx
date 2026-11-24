@@ -621,7 +621,7 @@ export default function Home() {
   }
 
   if (authLoading) return <div className="p-8 text-center">Loading...</div>;
-  if (!session) return <AuthScreen onSignIn={signIn} onSignUp={signUp} />;
+  if (!session) return <AuthScreen onSignIn={signIn} onSignUp={signUp} darkMode={darkMode} />;
   if (loading) return <div className="p-8 text-center">Loading jobs...</div>;
 
   const monthStart = startOfMonth(currentMonth);
@@ -634,7 +634,7 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-4 py-3 flex justify-between items-center sticky top-0 z-10">
         <div>
-          <img src="/logo.png" alt="Reny Plumbing" className="h-9 w-auto" />
+          <img src={darkMode ? '/logo-dark.png' : '/logo.png'} alt="Reny Plumbing" className="h-9 w-auto" />
           <p className="text-xs text-gray-500 truncate max-w-[200px] sm:max-w-none">{session.user.email}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -958,14 +958,14 @@ export default function Home() {
   );
 }
 
-function AuthScreen({ onSignIn, onSignUp }: any) {
+function AuthScreen({ onSignIn, onSignUp, darkMode }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white p-6 rounded-xl border max-w-md w-full">
-        <img src="/logo.png" alt="Reny Plumbing" className="h-16 w-auto mx-auto mb-6" />
+        <img src={darkMode ? '/logo-dark.png' : '/logo.png'} alt="Reny Plumbing" className="h-16 w-auto mx-auto mb-6" />
         <form onSubmit={e => { e.preventDefault(); isSignUp ? onSignUp(email, password) : onSignIn(email, password); }} className="space-y-4">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full border rounded px-3 py-2" />
           <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full border rounded px-3 py-2" />
