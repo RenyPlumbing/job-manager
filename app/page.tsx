@@ -85,11 +85,22 @@ function readExtraDates(notes?: string) {
   return match[1].split('|').map(item => item.trim()).filter(Boolean);
 }
 
+function readUntil(notes?: string) {
+  const match = (notes || '').match(/@@until:(\d{2}:\d{2})@@/);
+  return match ? match[1] : '';
+}
+
+function readAllDay(notes?: string) {
+  return /@@allday@@/.test(notes || '');
+}
+
 function readNotes(notes?: string) {
   return (notes || '')
     .replace(/@@invoice:(needs|sent|paid)@@\n?/g, '')
     .replace(/@@email:.*?@@\n?/g, '')
-    .replace(/@@dates:.*?@@\n?/g, '');
+    .replace(/@@dates:.*?@@\n?/g, '')
+    .replace(/@@until:\d{2}:\d{2}@@\n?/g, '')
+    .replace(/@@allday@@\n?/g, '');
 }
 
 function invoiceKey(job?: { status?: string; notes?: string }) {
@@ -104,15 +115,35 @@ function invoiceColor(key: string) {
   return { card: 'bg-white border-gray-200', chip: 'bg-blue-100 text-blue-800', block: 'bg-indigo-500 text-white', on: '' };
 }
 
-function packNotes(email: string, notes: string, invoice = '', extraDates?: string[]) {
+function packNotes(email: string, notes: string, invoice = '', extraDates?: string[], until?: string | null, allDay?: boolean | null) {
   const dates = (extraDates ?? readExtraDates(notes)).filter(Boolean);
+  const end = until == null ? readUntil(notes) : until;
+  const dayFlag = allDay == null ? readAllDay(notes) : allDay;
   const clean = readNotes(notes).trim();
   const inv = invoice === 'needs' || invoice === 'sent' || invoice === 'paid' ? `@@invoice:${invoice}@@\n` : '';
   const mail = email.trim() ? `@@email:${email.trim()}@@` : '';
   const dateTag = dates.length ? `@@dates:${dates.join('|')}@@` : '';
-  const head = `${inv}${[mail, dateTag].filter(Boolean).join('\n')}`.trim();
+  const untilTag = end ? `@@until:${end}@@` : '';
+  const allDayTag = dayFlag && !end ? '@@allday@@' : '';
+  const head = `${inv}${[mail, dateTag, untilTag, allDayTag].filter(Boolean).join('\n')}`.trim();
   const body = `${head}${head && clean ? '\n' : ''}${clean}`.trim();
   return body || null;
+}
+
+function formatJobSchedule(job: { scheduled_date?: string; notes?: string }) {
+  const dates = [job.scheduled_date, ...readExtraDates(job.notes)].filter((value): value is string => !!value);
+  return dates.map((value, index) => {
+    const start = new Date(value);
+    if (Number.isNaN(start.getTime())) return '';
+    if (index === 0 && readUntil(job.notes)) {
+      const [hours, minutes] = readUntil(job.notes).split(':').map(Number);
+      const end = new Date(start);
+      end.setHours(hours || 0, minutes || 0, 0, 0);
+      return `${format(start, 'PPP')}, ${format(start, 'p')} – ${format(end, 'p')}`;
+    }
+    if (index === 0 && readAllDay(job.notes)) return format(start, 'PPP');
+    return format(start, 'PPp');
+  }).filter(Boolean).join(' · ');
 }
 
 function ContactActions({ phone, address }: { phone?: string; address?: string }) {
@@ -362,6 +393,12 @@ function placeDayJobs(dayJobs: Job[], day: Date) {
     const hours = Number(job.estimated_hours) > 0 ? Number(job.estimated_hours) : 1;
     let a = start.getHours() * 60 + start.getMinutes();
     let b = a + Math.round(hours * 60);
+    const onPrimary = !!job.scheduled_date && isSameDay(new Date(job.scheduled_date), day);
+    const until = onPrimary ? readUntil(job.notes) : '';
+    if (until) {
+      const [hoursUntil, minutesUntil] = until.split(':').map(Number);
+      b = (hoursUntil || 0) * 60 + (minutesUntil || 0);
+    }
     a = Math.max(windowStart, Math.min(a, windowEnd - 28));
     b = Math.max(a + 28, Math.min(b, windowEnd));
     return { job, a, b, col: 0, cols: 1 };
@@ -1147,7 +1184,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
       <h3 className="font-medium">{job.customer_name || 'No name'}</h3>
       <p className="text-sm text-gray-700 mt-1">{job.address || 'No address'}</p>
       <p className="text-sm text-gray-700 mt-1">{job.description || 'No description'}</p>
-      {when.length > 0 && <p className="text-sm text-blue-600 mt-1">{when.map(value => format(new Date(value), 'PPp')).join(' · ')}</p>}
+      {when.length > 0 && <p className="text-sm text-blue-600 mt-1">{formatJobSchedule(job)}</p>}
     </>
   );
   return (
@@ -1199,7 +1236,7 @@ function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; o
           <p>Description: {job.description || 'None'}</p>
           <p>Phone: {job.customer_phone || 'None'}</p>
           <p>Email: {email || 'None'}</p>
-          <p className="text-blue-600">{[job.scheduled_date, ...readExtraDates(job.notes)].filter((value): value is string => !!value).map(value => format(new Date(value), 'PPp')).join(' · ') || 'Unscheduled'}</p>
+          <p className="text-blue-600">{formatJobSchedule(job) || 'Unscheduled'}</p>
         </div>
         <ContactActions phone={job.customer_phone} address={job.address} />
         {notes && <p className="mt-3 text-sm whitespace-pre-wrap">{notes}</p>}
@@ -1211,6 +1248,11 @@ function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; o
 }
 
 function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
+  const initialWhen = toLocalInput(job?.scheduled_date);
+  const [jobDate, setJobDate] = useState(initialWhen ? initialWhen.slice(0, 10) : (defaultDate ? format(defaultDate, 'yyyy-MM-dd') : ''));
+  const [jobTime, setJobTime] = useState(job?.scheduled_date && !readAllDay(job?.notes) && initialWhen ? initialWhen.slice(11, 16) : '');
+  const [endTime, setEndTime] = useState(readUntil(job?.notes));
+  const [showRange, setShowRange] = useState(!!readUntil(job?.notes));
   const [extraDates, setExtraDates] = useState<string[]>(() => readExtraDates(job?.notes).map(value => toLocalInput(value)));
   const [form, setForm] = useState({
     title: job?.title || '',
@@ -1246,14 +1288,21 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
       customer_name: form.customer_name || null,
       customer_phone: form.customer_phone || null,
       address: form.address || null,
-      notes: packNotes(form.customer_email, form.notes, readInvoice(job?.notes), form.scheduled_date ? extraDates.filter(Boolean).map(value => new Date(value).toISOString()) : []),
+      notes: packNotes(
+        form.customer_email,
+        form.notes,
+        readInvoice(job?.notes),
+        jobDate ? extraDates.filter(Boolean).map(value => new Date(value).toISOString()) : [],
+        jobDate && showRange && endTime ? endTime : '',
+        !!(jobDate && !jobTime && !(showRange && endTime)),
+      ),
       estimated_hours: form.estimated_hours ? +form.estimated_hours : null,
       hourly_rate: form.hourly_rate ? +form.hourly_rate : null,
       material_cost: form.material_cost ? +form.material_cost : null,
       markup_percent: +form.markup_percent || 20,
     };
-    if (form.scheduled_date) {
-      data.scheduled_date = new Date(form.scheduled_date).toISOString();
+    if (jobDate) {
+      data.scheduled_date = new Date(`${jobDate}T${jobTime || '00:00'}`).toISOString();
       if (data.status !== 'completed') data.status = 'scheduled';
     } else {
       data.scheduled_date = null;
@@ -1310,7 +1359,22 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
           <input type="email" placeholder="Email" value={form.customer_email} onChange={e => setForm({...form, customer_email: e.target.value})} className="w-full border rounded px-3 py-2" />
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
           <textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full border rounded px-3 py-2" rows={2} />
-          <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
+          <div>
+            <label className="text-sm text-gray-600">Date</label>
+            <input type="date" value={jobDate} onChange={e => setJobDate(e.target.value)} className="w-full border rounded px-3 py-2" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600">Time</label>
+            <input type="time" value={jobTime} onChange={e => setJobTime(e.target.value)} className="w-full border rounded px-3 py-2" />
+            {showRange ? (
+              <div className="flex gap-2 mt-2">
+                <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="flex-1 border rounded px-3 py-2" />
+                <button type="button" onClick={() => { setShowRange(false); setEndTime(''); }} className="px-3 border rounded text-sm">Remove</button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setShowRange(true)} className="block text-sm text-blue-600 mt-1">+ Add range</button>
+            )}
+          </div>
           {extraDates.map((value, index) => (
             <div key={index} className="flex gap-2">
               <input type="datetime-local" value={value} onChange={e => setExtraDates(extraDates.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} className="flex-1 border rounded px-3 py-2" />
