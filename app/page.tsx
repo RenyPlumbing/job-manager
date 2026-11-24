@@ -79,10 +79,17 @@ function readInvoice(notes?: string) {
   return match ? match[1] : '';
 }
 
+function readExtraDates(notes?: string) {
+  const match = (notes || '').match(/@@dates:(.*?)@@/);
+  if (!match || !match[1]) return [] as string[];
+  return match[1].split('|').map(item => item.trim()).filter(Boolean);
+}
+
 function readNotes(notes?: string) {
   return (notes || '')
     .replace(/@@invoice:(needs|sent|paid)@@\n?/g, '')
-    .replace(/@@email:.*?@@\n?/g, '');
+    .replace(/@@email:.*?@@\n?/g, '')
+    .replace(/@@dates:.*?@@\n?/g, '');
 }
 
 function invoiceKey(job?: { status?: string; notes?: string }) {
@@ -97,11 +104,14 @@ function invoiceColor(key: string) {
   return { card: 'bg-white border-gray-200', chip: 'bg-blue-100 text-blue-800', block: 'bg-indigo-500 text-white', on: '' };
 }
 
-function packNotes(email: string, notes: string, invoice = '') {
+function packNotes(email: string, notes: string, invoice = '', extraDates?: string[]) {
+  const dates = (extraDates ?? readExtraDates(notes)).filter(Boolean);
   const clean = readNotes(notes).trim();
   const inv = invoice === 'needs' || invoice === 'sent' || invoice === 'paid' ? `@@invoice:${invoice}@@\n` : '';
   const mail = email.trim() ? `@@email:${email.trim()}@@` : '';
-  const body = `${inv}${mail}${mail && clean ? '\n' : ''}${clean}`.trim();
+  const dateTag = dates.length ? `@@dates:${dates.join('|')}@@` : '';
+  const head = `${inv}${[mail, dateTag].filter(Boolean).join('\n')}`.trim();
+  const body = `${head}${head && clean ? '\n' : ''}${clean}`.trim();
   return body || null;
 }
 
@@ -342,11 +352,13 @@ const WEEK_START_HOUR = 6;
 const WEEK_END_HOUR = 20;
 const HOUR_HEIGHT = 52;
 
-function placeDayJobs(dayJobs: Job[]) {
+function placeDayJobs(dayJobs: Job[], day: Date) {
   const windowStart = WEEK_START_HOUR * 60;
   const windowEnd = WEEK_END_HOUR * 60;
   const items = dayJobs.map(job => {
-    const start = new Date(job.scheduled_date || '');
+    const dates = [job.scheduled_date, ...readExtraDates(job.notes)].filter((value): value is string => !!value);
+    const match = dates.find(value => isSameDay(new Date(value), day)) || job.scheduled_date || '';
+    const start = new Date(match);
     const hours = Number(job.estimated_hours) > 0 ? Number(job.estimated_hours) : 1;
     let a = start.getHours() * 60 + start.getMinutes();
     let b = a + Math.round(hours * 60);
@@ -426,6 +438,10 @@ export default function Home() {
         html.dark .job-card.bg-orange-200, html.dark .job-card.bg-orange-200 h3, html.dark .job-card.bg-orange-200 p,
         html.dark .job-card.bg-yellow-100, html.dark .job-card.bg-yellow-100 h3, html.dark .job-card.bg-yellow-100 p,
         html.dark .job-card.bg-green-100, html.dark .job-card.bg-green-100 h3, html.dark .job-card.bg-green-100 p { color:#111827 !important; }
+        html.dark button.job-tile, html.dark button.job-tile * { color:#f8fafc !important; }
+        html.dark button.job-tile.bg-orange-200, html.dark button.job-tile.bg-orange-200 *,
+        html.dark button.job-tile.bg-yellow-100, html.dark button.job-tile.bg-yellow-100 *,
+        html.dark button.job-tile.bg-green-100, html.dark button.job-tile.bg-green-100 * { color:#111827 !important; }
       `;
       document.head.appendChild(style);
     }
@@ -590,7 +606,7 @@ export default function Home() {
     const job = jobs.find(item => item.id === id);
     const patch: any = { status: completed ? 'completed' : 'scheduled' };
     if (completed && job && !readInvoice(job.notes)) {
-      patch.notes = packNotes(readEmail(job.notes), readNotes(job.notes), 'needs');
+      patch.notes = packNotes(readEmail(job.notes), job.notes || '', 'needs');
     }
     const { error } = await supabase.from('jobs').update(patch).eq('id', id);
     if (error) { alert(error.message); return; }
@@ -598,7 +614,7 @@ export default function Home() {
   }
 
   async function setInvoice(job: Job, invoice: string) {
-    const { error } = await supabase.from('jobs').update({ notes: packNotes(readEmail(job.notes), readNotes(job.notes), invoice) }).eq('id', job.id);
+    const { error } = await supabase.from('jobs').update({ notes: packNotes(readEmail(job.notes), job.notes || '', invoice) }).eq('id', job.id);
     if (error) { alert(error.message); return; }
     await fetchData();
   }
@@ -675,7 +691,7 @@ export default function Home() {
   const monthEnd = endOfMonth(currentMonth);
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
   const customers = customerDirectory(jobs, savedCustomers);
-  const jobsOnDate = (date: Date) => jobs.filter(j => j.scheduled_date && (j.status === 'scheduled' || j.status === 'completed') && isSameDay(new Date(j.scheduled_date), date));
+  const jobsOnDate = (date: Date) => jobs.filter(job => (job.status === 'scheduled' || job.status === 'completed') && [job.scheduled_date, ...readExtraDates(job.notes)].some(value => value && isSameDay(new Date(value), date)));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -813,19 +829,19 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {jobs.filter(job => job.scheduled_date && (job.status === 'scheduled' || job.status === 'completed')).slice().sort((a, b) => new Date(a.scheduled_date || 0).getTime() - new Date(b.scheduled_date || 0).getTime()).map(job => (
+                {jobs.filter(job => (job.status === 'scheduled' || job.status === 'completed') && (job.scheduled_date || readExtraDates(job.notes).length)).slice().sort((a, b) => new Date(a.scheduled_date || readExtraDates(a.notes)[0] || 0).getTime() - new Date(b.scheduled_date || readExtraDates(b.notes)[0] || 0).getTime()).map(job => (
                   <button
                     type="button"
                     key={job.id}
                     onClick={() => setViewingJob(job)}
-                    className={`text-left rounded-lg border p-3 min-h-28 ${invoiceColor(invoiceKey(job)).card}`}
+                    className={`job-tile text-left rounded-lg border p-3 min-h-28 ${invoiceColor(invoiceKey(job)).card}`}
                   >
-                    <div className="font-medium truncate">{job.customer_name || job.title}</div>
-                    <div className="text-xs text-blue-600 mt-1">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : ''}</div>
-                    {job.description && <div className="text-sm text-gray-600 mt-2 line-clamp-3">{job.description}</div>}
+                    <div className="font-medium">{job.customer_name || 'No name'}</div>
+                    <div className="text-sm mt-1">{job.address || 'No address'}</div>
+                    <div className="text-sm mt-1 line-clamp-3">{job.description || 'No description'}</div>
                   </button>
                 ))}
-                {jobs.filter(job => job.scheduled_date && (job.status === 'scheduled' || job.status === 'completed')).length === 0 && <p className="text-gray-500 text-sm col-span-2">No scheduled jobs yet.</p>}
+                {jobs.filter(job => (job.status === 'scheduled' || job.status === 'completed') && (job.scheduled_date || readExtraDates(job.notes).length)).length === 0 && <p className="text-gray-500 text-sm col-span-2">No scheduled jobs yet.</p>}
               </div>
             )}
           </div>
@@ -835,7 +851,7 @@ export default function Home() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Unscheduled Jobs</h2>
             {jobs.filter(j => j.status === 'unscheduled').map(job => (
-              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} />
+              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
             ))}
             {jobs.filter(j => j.status === 'unscheduled').length === 0 && <p className="text-gray-500">None yet. Use + Job on this tab. Leave the date blank.</p>}
           </div>
@@ -957,8 +973,9 @@ export default function Home() {
                           onClick={() => { setEditingJob(job); setShowJobModal(true); }}
                           className="block w-full text-left bg-gray-50 border rounded px-2 py-2 mb-1"
                         >
-                          <div className="font-medium">{job.description || job.customer_name || 'Job'}</div>
-                          <div className="text-xs text-gray-500">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : 'Unscheduled'} · {job.status}</div>
+                          <div className="font-medium">{job.customer_name || 'No name'}</div>
+                          <div className="text-sm text-gray-700">{job.address || 'No address'}</div>
+                          <div className="text-sm text-gray-700">{job.description || 'No description'}</div>
                         </button>
                       ))}
                     </div>
@@ -1113,12 +1130,13 @@ function PhotoGallery({ urls }: { urls: string[] }) {
 function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, onInvoice, onOpen }: any) {
   const invoice = invoiceKey(job);
   const color = invoiceColor(invoice);
+  const when = [job.scheduled_date, ...readExtraDates(job.notes)].filter(Boolean);
   const info = (
     <>
-      <h3 className="font-medium truncate">{job.customer_name || 'No customer'}</h3>
-      {job.description && <p className="text-sm text-gray-700 mt-1">{job.description}</p>}
-      {job.scheduled_date && <p className="text-sm text-blue-600 mt-1">{format(new Date(job.scheduled_date), 'PPp')}</p>}
-      {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
+      <h3 className="font-medium">{job.customer_name || 'No name'}</h3>
+      <p className="text-sm text-gray-700 mt-1">{job.address || 'No address'}</p>
+      <p className="text-sm text-gray-700 mt-1">{job.description || 'No description'}</p>
+      {when.length > 0 && <p className="text-sm text-blue-600 mt-1">{when.map(value => format(new Date(value), 'PPp')).join(' · ')}</p>}
     </>
   );
   return (
@@ -1147,7 +1165,6 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
         </div>
         <div className="flex flex-col gap-1 text-sm flex-shrink-0">
           <button onClick={onEdit} className="text-blue-600">Edit</button>
-          {!showCompletedCheck && onToggleComplete && job.status !== 'completed' && <button onClick={() => onToggleComplete(true)} className="text-green-600">Done</button>}
           <button onClick={onDelete} className="text-red-500">Delete</button>
         </div>
       </div>
@@ -1165,12 +1182,13 @@ function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; o
           <h2 className="text-lg font-semibold">{job.customer_name || 'No customer'}</h2>
           <button type="button" onClick={onEdit} className="text-blue-600 shrink-0">Edit</button>
         </div>
-        {job.description && <p className="mt-2 text-gray-800">{job.description}</p>}
         <div className="mt-3 text-sm text-gray-700 space-y-1">
+          <p>Name: {job.customer_name || 'None'}</p>
+          <p>Address: {job.address || 'None'}</p>
+          <p>Description: {job.description || 'None'}</p>
           <p>Phone: {job.customer_phone || 'None'}</p>
           <p>Email: {email || 'None'}</p>
-          <p>Address: {job.address || 'None'}</p>
-          <p className="text-blue-600">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : 'Unscheduled'}</p>
+          <p className="text-blue-600">{[job.scheduled_date, ...readExtraDates(job.notes)].filter(Boolean).map(value => format(new Date(value), 'PPp')).join(' · ') || 'Unscheduled'}</p>
         </div>
         <ContactActions phone={job.customer_phone} address={job.address} />
         {notes && <p className="mt-3 text-sm whitespace-pre-wrap">{notes}</p>}
@@ -1182,6 +1200,7 @@ function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; o
 }
 
 function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
+  const [extraDates, setExtraDates] = useState<string[]>(() => readExtraDates(job?.notes).map(value => toLocalInput(value)));
   const [form, setForm] = useState({
     title: job?.title || '',
     description: job?.description || '',
@@ -1216,7 +1235,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
       customer_name: form.customer_name || null,
       customer_phone: form.customer_phone || null,
       address: form.address || null,
-      notes: packNotes(form.customer_email, form.notes, readInvoice(job?.notes)),
+      notes: packNotes(form.customer_email, form.notes, readInvoice(job?.notes), form.scheduled_date ? extraDates.filter(Boolean).map(value => new Date(value).toISOString()) : []),
       estimated_hours: form.estimated_hours ? +form.estimated_hours : null,
       hourly_rate: form.hourly_rate ? +form.hourly_rate : null,
       material_cost: form.material_cost ? +form.material_cost : null,
@@ -1281,7 +1300,14 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
           <input placeholder="Address" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full border rounded px-3 py-2" />
           <textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full border rounded px-3 py-2" rows={2} />
           <input type="datetime-local" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} className="w-full border rounded px-3 py-2" />
-          <p className="text-xs text-gray-500 -mt-2">Leave the date blank for Unscheduled. A date puts it on the calendar only.</p>
+          {extraDates.map((value, index) => (
+            <div key={index} className="flex gap-2">
+              <input type="datetime-local" value={value} onChange={e => setExtraDates(extraDates.map((item, itemIndex) => itemIndex === index ? e.target.value : item))} className="flex-1 border rounded px-3 py-2" />
+              <button type="button" onClick={() => setExtraDates(extraDates.filter((_, itemIndex) => itemIndex !== index))} className="px-3 border rounded text-sm">Remove</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setExtraDates([...extraDates, ''])} className="text-sm text-blue-600">+ Add Date</button>
+          <p className="text-xs text-gray-500 -mt-2">Leave the first date blank for Unscheduled. Extra dates also show on the calendar.</p>
           <textarea placeholder="Notes" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} className="w-full border rounded px-3 py-2" rows={3} />
           <div>
             <label className="text-sm text-gray-600">Photos</label>
@@ -1333,7 +1359,7 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
             {weekDays.map(day => (
               <div key={day.toISOString()} className="relative border-l" style={{ height: gridHeight }}>
                 {hours.map(hour => <div key={hour} className="border-t border-gray-200" style={{ height: HOUR_HEIGHT }} />)}
-                {placeDayJobs(jobsOnDate(day)).map(item => (
+                {placeDayJobs(jobsOnDate(day), day).map(item => (
                   <button
                     type="button"
                     key={item.job.id}
@@ -1346,7 +1372,9 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
                       width: `calc(${100 / item.cols}% - 3px)`,
                     }}
                   >
-                    {item.job.address || item.job.customer_name || item.job.title}
+                    <div className="font-semibold truncate">{item.job.customer_name || 'No name'}</div>
+                    <div className="truncate">{item.job.address || 'No address'}</div>
+                    <div className="truncate">{item.job.description || 'No description'}</div>
                   </button>
                 ))}
               </div>
@@ -1357,4 +1385,3 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
     </div>
   );
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
