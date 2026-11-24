@@ -235,37 +235,59 @@ function taskNoticeBody(task: { text: string; photos: string[]; audio: string })
   return 'New task';
 }
 
+const VAPID_PUBLIC_KEY = 'BEvR_HuocfRtsz6jNlAzm_W7NKng7XmUiNYp2c1s8GR9YD8t4mxH3FPm3FWwaDxrcz4ef3PZWBJNaI5pTFjM6Rw';
+
+function pushRecord(title?: string) {
+  if (!title?.startsWith('@@push:')) return null;
+  const rest = title.slice('@@push:'.length);
+  const splitAt = rest.indexOf('@@');
+  if (splitAt === -1) return null;
+  try {
+    return { email: rest.slice(0, splitAt), subscription: JSON.parse(rest.slice(splitAt + 2)) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } } };
+  } catch {
+    return null;
+  }
+}
+
+function vapidKeyBytes() {
+  const padded = VAPID_PUBLIC_KEY.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (VAPID_PUBLIC_KEY.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 async function notifyAssignedTasks(allTodos: Todo[], email: string, setAlerts: (items: string[]) => void) {
   const storageKey = 'reny-task-notices';
   const seen: string[] = JSON.parse(localStorage.getItem(storageKey) || '[]');
   const seeded = localStorage.getItem('reny-task-notices-seeded') === '1';
   const next = new Set(seen);
-  const fresh: string[] = [];
+  const fresh: { body: string; id: string }[] = [];
   for (const todo of allTodos) {
-    if (userRecord(todo.title) || todo.completed) continue;
+    if (userRecord(todo.title) || pushRecord(todo.title) || todo.completed) continue;
     const task = unpackTask(todo.title);
     if (!task.assignee || task.assignee !== email) continue;
     const key = `${todo.id}|${task.assignee}`;
     if (next.has(key)) continue;
     next.add(key);
     const recent = !!todo.created_at && Date.now() - new Date(todo.created_at).getTime() < 2 * 60 * 1000;
-    if (seeded || recent) fresh.push(taskNoticeBody(task));
+    if (seeded || recent) fresh.push({ body: taskNoticeBody(task), id: String(todo.id) });
   }
   localStorage.setItem(storageKey, JSON.stringify(Array.from(next).slice(-300)));
   if (!seeded) localStorage.setItem('reny-task-notices-seeded', '1');
   if (!fresh.length) return;
-  setAlerts(fresh);
+  setAlerts(fresh.map(item => item.body));
   if (localStorage.getItem('reny-task-notify') !== '1' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  for (const body of fresh) {
-    try { await showTaskNotification(body); } catch { /* alerts blocked */ }
+  for (const item of fresh) {
+    try { await showTaskNotification(item.body, `reny-${item.id}`); } catch { /* alerts blocked */ }
   }
 }
 
-async function showTaskNotification(body: string) {
+async function showTaskNotification(body: string, tag = 'reny-task') {
   const title = 'Task assigned to you';
   const reg = await navigator.serviceWorker?.getRegistration();
-  if (reg) await reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/notification-icon.png', tag: 'reny-task-' + Date.now() });
-  else new Notification(title, { body, icon: '/icon-192.png' });
+  if (reg) await reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/notification-icon.png', tag });
+  else new Notification(title, { body, icon: '/icon-192.png', tag });
 }
 
 async function filesToPhotos(files: File[]) {
@@ -461,6 +483,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [taskAlerts, setTaskAlerts] = useState<string[]>([]);
+  const [pushSubs, setPushSubs] = useState<{ email: string; subscription: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } }[]>([]);
   const [notifyOn, setNotifyOn] = useState(false);
 
   useEffect(() => {
@@ -529,6 +552,12 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [session]);
 
+  useEffect(() => {
+    const email = session?.user?.email;
+    if (!email || localStorage.getItem('reny-task-notify') !== '1') return;
+    savePushSubscription(email).catch(() => {});
+  }, [session]);
+
   async function fetchData() {
     const { data: jobsData } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
     const { data: todosData } = await supabase.from('todos').select('*').order('created_at', { ascending: false });
@@ -542,7 +571,8 @@ export default function Home() {
     }
     people.sort((a, b) => (a.nickname || a.email).localeCompare(b.nickname || b.email));
     setJobs(jobsData || []);
-    setTodos(allTodos.filter(todo => !userRecord(todo.title)));
+    setTodos(allTodos.filter(todo => !userRecord(todo.title) && !pushRecord(todo.title)));
+    setPushSubs(allTodos.map(todo => pushRecord(todo.title)).filter(Boolean) as { email: string; subscription: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } }[]);
     setUsers(people);
     setSavedCustomers(customerData || []);
     setLoading(false);
@@ -606,6 +636,41 @@ export default function Home() {
     localStorage.setItem('reny-task-notify', allowed ? '1' : '0');
     if (!allowed) { alert('Tap Allow when the phone asks.'); return; }
     try { await showTaskNotification('Alerts are on'); } catch { /* the phone blocked it */ }
+    if (session?.user?.email) {
+      try { await savePushSubscription(session.user.email); } catch { /* this phone could not register */ }
+    }
+  }
+
+  async function savePushSubscription(email: string) {
+    if (!email || typeof Notification === 'undefined' || Notification.permission !== 'granted' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const current = await reg.pushManager.getSubscription();
+    const subscription = current || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKeyBytes() });
+    const json = subscription.toJSON();
+    const title = `@@push:${email}@@${JSON.stringify(json)}`;
+    const { data } = await supabase.from('todos').select('id, title');
+    const existing = (data || []).find(todo => {
+      const saved = pushRecord(todo.title);
+      return saved?.email === email && saved.subscription?.endpoint === json.endpoint;
+    });
+    if (existing) {
+      if (existing.title !== title) await supabase.from('todos').update({ title }).eq('id', existing.id);
+    } else {
+      await supabase.from('todos').insert({ title });
+    }
+    await fetchData();
+  }
+
+  async function sendAssigneePush(email: string, body: string, tag: string) {
+    const subscriptions = pushSubs.filter(item => item.email === email).map(item => item.subscription);
+    if (!email || subscriptions.length === 0) return;
+    try {
+      await fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriptions, title: 'Task assigned to you', body, tag }),
+      });
+    } catch { /* the task is still saved */ }
   }
 
   async function saveJob(jobData: any, newPhotos: File[]) {
@@ -683,8 +748,9 @@ export default function Home() {
       alert('Add a task, a photo, or a recording.');
       return;
     }
-    const { error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos, audio) });
+    const { data, error } = await supabase.from('todos').insert({ title: packTask(text, creator, assignee, photos, audio) }).select('id').single();
     if (error) { alert(error.message); return; }
+    if (assignee) await sendAssigneePush(assignee, taskNoticeBody({ text, photos, audio }), data?.id ? `reny-${data.id}` : 'reny-task');
     setNewTaskTitle('');
     setNewTaskAssignee('');
     setNewTaskPhotos([]);
@@ -698,6 +764,7 @@ export default function Home() {
     const creator = parsed.creator || session?.user?.email || '';
     const { error } = await supabase.from('todos').update({ title: packTask(parsed.text, creator, assignee, parsed.photos, parsed.audio) }).eq('id', todo.id);
     if (error) { alert(error.message); return; }
+    if (assignee && assignee !== parsed.assignee) await sendAssigneePush(assignee, taskNoticeBody(parsed), `reny-${todo.id}`);
     await fetchData();
   }
 
