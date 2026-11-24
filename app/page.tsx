@@ -411,7 +411,18 @@ export default function Home() {
   const [openCustomer, setOpenCustomer] = useState<string | null>(null);
   const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'needs' | 'sent' | 'paid'>('all');
   const [loading, setLoading] = useState(true);
-  useState(false);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'tiles'>('month');
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  const [estHours, setEstHours] = useState(2);
+  const [estRate, setEstRate] = useState(75);
+  const [estMaterials, setEstMaterials] = useState(50);
+  const [estMarkup, setEstMarkup] = useState(20);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const [taskAlerts, setTaskAlerts] = useState<string[]>([]);
   const [notifyOn, setNotifyOn] = useState(false);
 
