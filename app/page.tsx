@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, eachDayOfInterval, isSameDay, isSameMonth, differenceInCalendarDays, addMonths, subMonths, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 
 type Job = {
   id: string;
@@ -895,17 +895,37 @@ export default function Home() {
             <div className="grid grid-cols-7 gap-0.5 text-center text-xs font-medium text-gray-500 mb-1">
               {['S','M','T','W','T','F','S'].map((d, i) => <div key={i}>{d}</div>)}
             </div>
-            <div className="grid grid-cols-7 gap-0.5 text-xs">
-              {days.map(day => {
-                const dayJobs = jobsOnDate(day);
-                const isToday = isSameDay(day, new Date());
-                const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+            <div className="space-y-0.5 text-xs">
+              {Array.from({ length: Math.ceil(days.length / 7) }, (_, weekIndex) => days.slice(weekIndex * 7, weekIndex * 7 + 7)).map(week => {
+                const weekJobs = week.flatMap(day => jobsOnDate(day)).filter((job, index, list) => list.findIndex(item => item.id === job.id) === index);
+                const spans = weekSpans(weekJobs, week);
                 return (
-                  <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
-                    className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
-                    <div className="text-right font-medium">{format(day, 'd')}</div>
-                    {dayJobs.slice(0, 1).map(j => <div key={j.id} onClick={e => { e.stopPropagation(); setViewingJob(j); }} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
-                    {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
+                  <div key={week[0].toISOString()} className="grid grid-cols-7 gap-0.5">
+                    {week.map(day => {
+                      const dayJobs = jobsOnDate(day).filter(job => !jobCoversDayAsSpan(job, day));
+                      const isToday = isSameDay(day, new Date());
+                      const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
+                      return (
+                        <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
+                          className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}
+                          style={spans.length ? { paddingTop: 14 + spans.reduce((max, span) => Math.max(max, span.lane + 1), 0) * 16 } : undefined}>
+                          <div className="text-right font-medium">{format(day, 'd')}</div>
+                          {dayJobs.slice(0, 1).map(j => <div key={j.id} onClick={e => { e.stopPropagation(); setViewingJob(j); }} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
+                          {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length - 1}</div>}
+                        </div>
+                      );
+                    })}
+                    {spans.map(span => (
+                      <button
+                        type="button"
+                        key={`${span.job.id}-${span.start}`}
+                        onClick={e => { e.stopPropagation(); setViewingJob(span.job); }}
+                        className={`z-10 mx-0.5 h-4 truncate rounded px-1 text-left text-[10px] font-medium ${scheduleBlockClass(span.job)}`}
+                        style={{ gridColumn: `${span.start + 1} / span ${span.length}`, gridRow: 1, alignSelf: 'start', marginTop: 16 + span.lane * 16 }}
+                      >
+                        {span.job.customer_name || span.job.address || 'Job'}
+                      </button>
+                    ))}
                   </div>
                 );
               })}
@@ -1468,6 +1488,70 @@ function scheduleLabel(job: Job) {
   return job.address || job.customer_name || 'Job';
 }
 
+function uniqueJobDays(job: Job) {
+  const values = [job.scheduled_date, ...readExtraDates(job.notes)].filter((value): value is string => !!value);
+  const seen = new Set<string>();
+  const days: Date[] = [];
+  for (const value of values) {
+    const day = startOfDay(new Date(value));
+    if (Number.isNaN(day.getTime())) continue;
+    const key = format(day, 'yyyy-MM-dd');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    days.push(day);
+  }
+  days.sort((a, b) => a.getTime() - b.getTime());
+  return days;
+}
+
+function jobCoversDayAsSpan(job: Job, day: Date) {
+  const days = uniqueJobDays(job);
+  let run = 1;
+  for (let i = 1; i < days.length; i += 1) {
+    if (differenceInCalendarDays(days[i], days[i - 1]) === 1) run += 1;
+    else run = 1;
+    if (run > 1 && days.slice(i - run + 1, i + 1).some(item => isSameDay(item, day))) return true;
+  }
+  return false;
+}
+
+function weekSpans(jobs: Job[], weekDays: Date[]) {
+  const spans: { job: Job; start: number; length: number; lane: number }[] = [];
+  const pending: { job: Job; start: number; length: number }[] = [];
+  for (const job of jobs) {
+    const days = uniqueJobDays(job);
+    let runStart = 0;
+    for (let i = 0; i <= days.length; i += 1) {
+      const broken = i === days.length || (i > 0 && differenceInCalendarDays(days[i], days[i - 1]) !== 1);
+      if (broken && i - runStart > 1) {
+        const run = days.slice(runStart, i);
+        let start = -1;
+        let length = 0;
+        weekDays.forEach((day, index) => {
+          if (run.some(item => isSameDay(item, day))) {
+            if (start === -1) start = index;
+            length += 1;
+          }
+        });
+        if (length > 0) pending.push({ job, start, length });
+      }
+      if (broken) runStart = i;
+    }
+  }
+  pending.sort((a, b) => a.start - b.start || b.length - a.length);
+  const laneEnds: number[] = [];
+  for (const span of pending) {
+    let lane = laneEnds.findIndex(end => end <= span.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(0);
+    }
+    laneEnds[lane] = span.start + span.length;
+    spans.push({ ...span, lane });
+  }
+  return spans;
+}
+
 function DayView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate: Date; jobsOnDate: (date: Date) => Job[]; onShift: (next: Date) => void; onOpen: (job: Job) => void }) {
   const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
   const row = 64;
@@ -1523,6 +1607,9 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
   const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) });
   const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
   const gridHeight = hours.length * HOUR_HEIGHT;
+  const weekJobs = weekDays.flatMap(day => jobsOnDate(day)).filter((job, index, list) => list.findIndex(item => item.id === job.id) === index);
+  const spans = weekSpans(weekJobs, weekDays);
+  const spanLanes = spans.reduce((max, span) => Math.max(max, span.lane + 1), 0);
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
@@ -1544,6 +1631,23 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
               </div>
             ))}
           </div>
+          {spanLanes > 0 && (
+            <div className="grid border-b" style={{ gridTemplateColumns: '44px repeat(7, 1fr)', height: spanLanes * 22 }}>
+              <div />
+              {weekDays.map(day => <div key={day.toISOString()} className="border-l" />)}
+              {spans.map(span => (
+                <button
+                  type="button"
+                  key={`${span.job.id}-${span.start}`}
+                  onClick={() => onOpen(span.job)}
+                  className={`z-10 mx-0.5 h-5 truncate rounded px-1 text-left text-[11px] font-medium ${scheduleBlockClass(span.job)}`}
+                  style={{ gridColumn: `${span.start + 2} / span ${span.length}`, gridRow: 1, alignSelf: 'start', marginTop: span.lane * 22 }}
+                >
+                  {span.job.customer_name || span.job.address || 'Job'}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid" style={{ gridTemplateColumns: '44px repeat(7, 1fr)', height: gridHeight }}>
             <div>
               {hours.map(hour => (
@@ -1553,7 +1657,7 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
             {weekDays.map(day => (
               <div key={day.toISOString()} className="relative border-l" style={{ height: gridHeight }}>
                 {hours.map(hour => <div key={hour} className="border-t border-gray-200" style={{ height: HOUR_HEIGHT }} />)}
-                {placeDayJobs(jobsOnDate(day), day).map(item => (
+                {placeDayJobs(jobsOnDate(day).filter(job => !jobCoversDayAsSpan(job, day)), day).map(item => (
                   <button
                     type="button"
                     key={item.job.id}
