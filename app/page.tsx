@@ -390,6 +390,10 @@ export default function Home() {
         html.dark .border, html.dark .border-b, html.dark .border-t, html.dark .border-l { border-color:#334155 !important; }
         html.dark input, html.dark textarea, html.dark select { background:#0f172a !important; color:#f8fafc !important; border-color:#475569 !important; }
         html.dark .bg-blue-50 { background-color:#1e3a5f !important; }
+        html.dark .job-card, html.dark .job-card h3, html.dark .job-card p { color:#ffffff !important; }
+        html.dark .job-card.bg-orange-100, html.dark .job-card.bg-orange-100 h3, html.dark .job-card.bg-orange-100 p,
+        html.dark .job-card.bg-yellow-100, html.dark .job-card.bg-yellow-100 h3, html.dark .job-card.bg-yellow-100 p,
+        html.dark .job-card.bg-green-100, html.dark .job-card.bg-green-100 h3, html.dark .job-card.bg-green-100 p { color:#111827 !important; }
       `;
       document.head.appendChild(style);
     }
@@ -1028,7 +1032,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
     </>
   );
   return (
-    <div className={`p-3 sm:p-4 rounded-lg border mb-3 ${color.card}`}>
+    <div className={`job-card p-3 sm:p-4 rounded-lg border mb-3 ${color.card}`}>
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           {onOpen ? <button type="button" onClick={onOpen} className="w-full text-left">{info}</button> : info}
