@@ -151,7 +151,7 @@ function ContactActions({ phone, address }: { phone?: string; address?: string }
   if (!tel && !address) return null;
   return (
     <div className="flex flex-wrap gap-2 mt-2">
-      {tel && <a href={`tel:${tel}`} className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm">Call</a>}
+      {tel && <a href={`tel:${tel}`} className="px-3 py-1.5 rounded border text-sm">Call</a>}
       {tel && <a href={`sms:${tel}`} className="px-3 py-1.5 rounded border text-sm">Text</a>}
       {address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded border text-sm">Directions</a>}
     </div>
