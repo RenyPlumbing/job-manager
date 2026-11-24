@@ -1,5 +1,7 @@
 import { sendPush } from '../../../lib/send-push.mjs';
 
+export const runtime = 'edge';
+
 export async function POST(request) {
   let payload;
   try {
