@@ -364,6 +364,7 @@ export default function Home() {
   const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'tiles'>('month');
   const [showJobModal, setShowJobModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [viewingJob, setViewingJob] = useState<Job | null>(null);
 
   const [estHours, setEstHours] = useState(2);
   const [estRate, setEstRate] = useState(75);
@@ -655,7 +656,7 @@ export default function Home() {
                   <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
                     className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-right font-medium">{format(day, 'd')}</div>
-                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
+                    {dayJobs.slice(0, 1).map(j => <div key={j.id} onClick={e => { e.stopPropagation(); setViewingJob(j); }} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
                     {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
                   </div>
                 );
@@ -665,7 +666,7 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onOpen={() => setViewingJob(job)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -676,7 +677,7 @@ export default function Home() {
                 selectedDate={selectedDate || new Date()}
                 jobsOnDate={jobsOnDate}
                 onShift={next => setSelectedDate(next)}
-                onOpen={job => { setEditingJob(job); setShowJobModal(true); }}
+                onOpen={job => setViewingJob(job)}
               />
             ) : calendarView === 'day' ? (
               <div>
@@ -689,7 +690,7 @@ export default function Home() {
                   </div>
                 </div>
                 {jobsOnDate(selectedDate || new Date()).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onOpen={() => setViewingJob(job)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -699,7 +700,7 @@ export default function Home() {
                   <button
                     type="button"
                     key={job.id}
-                    onClick={() => { setEditingJob(job); setShowJobModal(true); }}
+                    onClick={() => setViewingJob(job)}
                     className={`text-left rounded-lg border p-3 min-h-28 ${invoiceColor(invoiceKey(job)).card}`}
                   >
                     <div className="font-medium truncate">{job.customer_name || job.title}</div>
@@ -887,6 +888,13 @@ export default function Home() {
       </main>
 
       {showJobModal && <JobModal job={editingJob} customers={customers} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={activeTab === 'calendar' ? selectedDate : null} />}
+      {viewingJob && (
+        <JobDetails
+          job={viewingJob}
+          onClose={() => setViewingJob(null)}
+          onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); setShowJobModal(true); }}
+        />
+      )}
     </div>
   );
 }
@@ -953,18 +961,23 @@ function PhotoGallery({ urls }: { urls: string[] }) {
   );
 }
 
-function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, onInvoice }: any) {
+function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, onInvoice, onOpen }: any) {
   const invoice = invoiceKey(job);
   const color = invoiceColor(invoice);
+  const info = (
+    <>
+      <h3 className="font-medium truncate">{job.customer_name || 'No customer'}</h3>
+      {job.description && <p className="text-sm text-gray-700 mt-1">{job.description}</p>}
+      {job.scheduled_date && <p className="text-sm text-blue-600 mt-1">{format(new Date(job.scheduled_date), 'PPp')}</p>}
+      {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
+    </>
+  );
   return (
     <div className={`p-3 sm:p-4 rounded-lg border mb-3 ${color.card}`}>
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium truncate">{job.customer_name || 'No customer'}</h3>
-          {job.description && <p className="text-sm text-gray-700 mt-1">{job.description}</p>}
+          {onOpen ? <button type="button" onClick={onOpen} className="w-full text-left">{info}</button> : info}
           <ContactActions phone={job.customer_phone} address={job.address} />
-          {job.scheduled_date && <p className="text-sm text-blue-600">{format(new Date(job.scheduled_date), 'PPp')}</p>}
-          {readNotes(job.notes) && <p className="text-sm text-gray-700 mt-1 line-clamp-2">{readNotes(job.notes)}</p>}
           {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           {showCompletedCheck && (
             <label className="flex items-center gap-2 mt-3 text-sm font-medium">
@@ -988,6 +1001,32 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
           {!showCompletedCheck && onToggleComplete && job.status !== 'completed' && <button onClick={() => onToggleComplete(true)} className="text-green-600">Done</button>}
           <button onClick={onDelete} className="text-red-500">Delete</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; onEdit: () => void }) {
+  const email = readEmail(job.notes);
+  const notes = readNotes(job.notes);
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-4" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start gap-3">
+          <h2 className="text-lg font-semibold">{job.customer_name || 'No customer'}</h2>
+          <button type="button" onClick={onEdit} className="text-blue-600 shrink-0">Edit</button>
+        </div>
+        {job.description && <p className="mt-2 text-gray-800">{job.description}</p>}
+        <div className="mt-3 text-sm text-gray-700 space-y-1">
+          <p>Phone: {job.customer_phone || 'None'}</p>
+          <p>Email: {email || 'None'}</p>
+          <p>Address: {job.address || 'None'}</p>
+          <p className="text-blue-600">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : 'Unscheduled'}</p>
+        </div>
+        <ContactActions phone={job.customer_phone} address={job.address} />
+        {notes && <p className="mt-3 text-sm whitespace-pre-wrap">{notes}</p>}
+        {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
+        <button type="button" onClick={onClose} className="mt-4 w-full border rounded py-2">Close</button>
       </div>
     </div>
   );
