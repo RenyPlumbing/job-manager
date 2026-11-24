@@ -85,6 +85,18 @@ function readNotes(notes?: string) {
     .replace(/@@email:.*?@@\n?/g, '');
 }
 
+function invoiceKey(job?: { status?: string; notes?: string }) {
+  if (job?.status !== 'completed') return '';
+  return readInvoice(job.notes) || 'needs';
+}
+
+function invoiceColor(key: string) {
+  if (key === 'needs') return { card: 'bg-orange-100 border-orange-400', chip: 'bg-orange-500 text-white', block: 'bg-orange-500 text-white', on: 'bg-orange-500 text-white border-orange-500' };
+  if (key === 'sent') return { card: 'bg-yellow-100 border-yellow-400', chip: 'bg-yellow-300 text-yellow-950', block: 'bg-yellow-300 text-yellow-950', on: 'bg-yellow-300 text-yellow-950 border-yellow-400' };
+  if (key === 'paid') return { card: 'bg-green-100 border-green-400', chip: 'bg-green-600 text-white', block: 'bg-green-600 text-white', on: 'bg-green-600 text-white border-green-600' };
+  return { card: 'bg-white border-gray-200', chip: 'bg-blue-100 text-blue-800', block: 'bg-indigo-500 text-white', on: '' };
+}
+
 function packNotes(email: string, notes: string, invoice = '') {
   const clean = readNotes(notes).trim();
   const inv = invoice === 'needs' || invoice === 'sent' || invoice === 'paid' ? `@@invoice:${invoice}@@\n` : '';
@@ -643,7 +655,7 @@ export default function Home() {
                   <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
                     className={`min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}>
                     <div className="text-right font-medium">{format(day, 'd')}</div>
-                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${j.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{j.customer_name || j.title}</div>)}
+                    {dayJobs.slice(0, 1).map(j => <div key={j.id} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
                     {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length-1}</div>}
                   </div>
                 );
@@ -688,7 +700,7 @@ export default function Home() {
                     type="button"
                     key={job.id}
                     onClick={() => { setEditingJob(job); setShowJobModal(true); }}
-                    className={`text-left rounded-lg border p-3 min-h-28 ${job.status === 'completed' ? 'bg-green-50 border-green-200' : 'bg-white'}`}
+                    className={`text-left rounded-lg border p-3 min-h-28 ${invoiceColor(invoiceKey(job)).card}`}
                   >
                     <div className="font-medium truncate">{job.customer_name || job.title}</div>
                     <div className="text-xs text-blue-600 mt-1">{job.scheduled_date ? format(new Date(job.scheduled_date), 'PPp') : ''}</div>
@@ -942,14 +954,10 @@ function PhotoGallery({ urls }: { urls: string[] }) {
 }
 
 function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, onInvoice }: any) {
-  const invoice = readInvoice(job.notes) || (job.status === 'completed' ? 'needs' : '');
-  const invoiceStyle: Record<string, string> = {
-    needs: 'bg-amber-500 text-white border-amber-500',
-    sent: 'bg-blue-600 text-white border-blue-600',
-    paid: 'bg-green-600 text-white border-green-600',
-  };
+  const invoice = invoiceKey(job);
+  const color = invoiceColor(invoice);
   return (
-    <div className="bg-white p-3 sm:p-4 rounded-lg border mb-3">
+    <div className={`p-3 sm:p-4 rounded-lg border mb-3 ${color.card}`}>
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           <h3 className="font-medium truncate">{job.customer_name || 'No customer'}</h3>
@@ -965,10 +973,13 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
             </label>
           )}
           {job.status === 'completed' && onInvoice && (
-            <div className="flex flex-wrap gap-1 mt-3">
-              {([['needs', 'Needs invoice'], ['sent', 'Invoice sent'], ['paid', 'Paid']] as const).map(([key, label]) => (
-                <button type="button" key={key} onClick={() => onInvoice(key)} className={`px-2 py-1 rounded text-xs border ${invoice === key ? invoiceStyle[key] : 'bg-white'}`}>{label}</button>
-              ))}
+            <div className="mt-3">
+              <p className="text-xs text-gray-600 mb-1">Status</p>
+              <div className="flex flex-wrap gap-1">
+                {([['needs', 'Needs invoice'], ['sent', 'Invoice sent'], ['paid', 'Paid']] as const).map(([key, label]) => (
+                  <button type="button" key={key} onClick={() => onInvoice(key)} className={`px-2 py-1 rounded text-xs border ${invoice === key ? invoiceColor(key).on : 'bg-white'}`}>{label}</button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1139,7 +1150,7 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
                     type="button"
                     key={item.job.id}
                     onClick={() => onOpen(item.job)}
-                    className={`absolute overflow-hidden rounded-md px-1 py-0.5 text-left text-[10px] leading-tight text-white ${item.job.status === 'completed' ? 'bg-green-600' : 'bg-indigo-500'}`}
+                    className={`absolute overflow-hidden rounded-md px-1 py-0.5 text-left text-[10px] leading-tight ${invoiceColor(invoiceKey(item.job)).block}`}
                     style={{
                       top: ((item.a - WEEK_START_HOUR * 60) / 60) * HOUR_HEIGHT,
                       height: Math.max(18, ((item.b - item.a) / 60) * HOUR_HEIGHT - 2),
