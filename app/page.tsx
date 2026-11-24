@@ -851,7 +851,7 @@ export default function Home() {
           <div>
             <h2 className="text-lg font-semibold mb-3">Unscheduled Jobs</h2>
             {jobs.filter(j => j.status === 'unscheduled').map(job => (
-              <JobCard key={job.id} job={job} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+              <JobCard key={job.id} job={job} onOpen={() => setViewingJob(job)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
             ))}
             {jobs.filter(j => j.status === 'unscheduled').length === 0 && <p className="text-gray-500">None yet. Use + Job on this tab. Leave the date blank.</p>}
           </div>
