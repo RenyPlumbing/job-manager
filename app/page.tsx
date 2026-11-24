@@ -560,7 +560,7 @@ export default function Home() {
   async function enableTaskAlerts() {
     if (typeof Notification === 'undefined') { alert('This phone cannot show alerts.'); return; }
     if (Notification.permission === 'denied') {
-      alert('Alerts are blocked. Open your phone Settings, then Apps, then Reny Plumbing, then Notifications, and turn them on. Then tap Turn on alerts again.');
+      alert('The Reny app notifications are already separate from this. Chrome is blocking the website. Open the Chrome app, tap the three dots, Settings, Site settings, Notifications. Under Blocked, tap job-manager-bce.pages.dev and choose Allow. Then turn Task alerts on again.');
       return;
     }
     const result = await Notification.requestPermission();
