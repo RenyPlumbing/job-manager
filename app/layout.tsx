@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Job Manager',
+  title: 'Reny Plumbing',
   description: 'Simple job scheduling, notes, todos and estimator',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Job Manager',
+    title: 'Reny Plumbing',
   },
   icons: {
     icon: '/icon-192.png',
