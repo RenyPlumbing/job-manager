@@ -377,6 +377,22 @@ export default function Home() {
     const saved = localStorage.getItem('reny-dark') === '1';
     setDarkMode(saved);
     document.documentElement.classList.toggle('dark', saved);
+    if (!document.getElementById('reny-dark-style')) {
+      const style = document.createElement('style');
+      style.id = 'reny-dark-style';
+      style.textContent = `
+        html.dark, html.dark body { background:#0f172a !important; color:#e5e7eb !important; }
+        html.dark .min-h-screen, html.dark .bg-gray-50 { background-color:#0f172a !important; }
+        html.dark .bg-white { background-color:#1e293b !important; }
+        html.dark .bg-gray-100 { background-color:#334155 !important; }
+        html.dark .text-gray-900, html.dark .text-gray-800, html.dark .text-gray-700 { color:#e5e7eb !important; }
+        html.dark .text-gray-600, html.dark .text-gray-500, html.dark .text-gray-400 { color:#cbd5e1 !important; }
+        html.dark .border, html.dark .border-b, html.dark .border-t, html.dark .border-l { border-color:#334155 !important; }
+        html.dark input, html.dark textarea, html.dark select { background:#0f172a !important; color:#f8fafc !important; border-color:#475569 !important; }
+        html.dark .bg-blue-50 { background-color:#1e3a5f !important; }
+      `;
+      document.head.appendChild(style);
+    }
   }, []);
 
   const labor = estHours * estRate;
