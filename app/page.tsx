@@ -91,7 +91,7 @@ function invoiceKey(job?: { status?: string; notes?: string }) {
 }
 
 function invoiceColor(key: string) {
-  if (key === 'needs') return { card: 'bg-orange-100 border-orange-400', chip: 'bg-orange-500 text-white', block: 'bg-orange-500 text-white', on: 'bg-orange-500 text-white border-orange-500' };
+  if (key === 'needs') return { card: 'bg-orange-200 border-orange-500', chip: 'bg-orange-600 text-white', block: 'bg-orange-600 text-white', on: 'bg-orange-600 text-white border-orange-600' };
   if (key === 'sent') return { card: 'bg-yellow-100 border-yellow-400', chip: 'bg-yellow-300 text-yellow-950', block: 'bg-yellow-300 text-yellow-950', on: 'bg-yellow-300 text-yellow-950 border-yellow-400' };
   if (key === 'paid') return { card: 'bg-green-100 border-green-400', chip: 'bg-green-600 text-white', block: 'bg-green-600 text-white', on: 'bg-green-600 text-white border-green-600' };
   return { card: 'bg-white border-gray-200', chip: 'bg-blue-100 text-blue-800', block: 'bg-indigo-500 text-white', on: '' };
@@ -391,7 +391,7 @@ export default function Home() {
         html.dark input, html.dark textarea, html.dark select { background:#0f172a !important; color:#f8fafc !important; border-color:#475569 !important; }
         html.dark .bg-blue-50 { background-color:#1e3a5f !important; }
         html.dark .job-card, html.dark .job-card h3, html.dark .job-card p { color:#ffffff !important; }
-        html.dark .job-card.bg-orange-100, html.dark .job-card.bg-orange-100 h3, html.dark .job-card.bg-orange-100 p,
+        html.dark .job-card.bg-orange-200, html.dark .job-card.bg-orange-200 h3, html.dark .job-card.bg-orange-200 p,
         html.dark .job-card.bg-yellow-100, html.dark .job-card.bg-yellow-100 h3, html.dark .job-card.bg-yellow-100 p,
         html.dark .job-card.bg-green-100, html.dark .job-card.bg-green-100 h3, html.dark .job-card.bg-green-100 p { color:#111827 !important; }
       `;
