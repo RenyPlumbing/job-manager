@@ -187,6 +187,45 @@ function unpackTask(title?: string) {
   };
 }
 
+function taskNoticeBody(task: { text: string; photos: string[]; audio: string }) {
+  if (task.text.trim()) return task.text.trim();
+  if (task.photos.length) return 'Photo task';
+  if (task.audio) return 'Voice recording';
+  return 'New task';
+}
+
+async function notifyAssignedTasks(allTodos: Todo[], email: string, setAlerts: (items: string[]) => void) {
+  const storageKey = 'reny-task-notices';
+  const seen: string[] = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  const seeded = localStorage.getItem('reny-task-notices-seeded') === '1';
+  const next = new Set(seen);
+  const fresh: string[] = [];
+  for (const todo of allTodos) {
+    if (userRecord(todo.title) || todo.completed) continue;
+    const task = unpackTask(todo.title);
+    if (!task.assignee || task.assignee !== email) continue;
+    const key = `${todo.id}|${task.assignee}`;
+    if (next.has(key)) continue;
+    next.add(key);
+    const recent = !!todo.created_at && Date.now() - new Date(todo.created_at).getTime() < 2 * 60 * 1000;
+    if (seeded || recent) fresh.push(taskNoticeBody(task));
+  }
+  localStorage.setItem(storageKey, JSON.stringify([...next].slice(-300)));
+  if (!seeded) localStorage.setItem('reny-task-notices-seeded', '1');
+  if (!fresh.length) return;
+  setAlerts(fresh);
+  if (localStorage.getItem('reny-task-notify') !== '1' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  for (const body of fresh) {
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) await reg.showNotification('Task assigned to you', { body, icon: '/icon-192.png', tag: 'reny-task-' + body.slice(0, 40) });
+      else new Notification('Task assigned to you', { body, icon: '/icon-192.png' });
+    } catch {
+      try { new Notification('Task assigned to you', { body, icon: '/icon-192.png' }); } catch { /* alerts blocked */ }
+    }
+  }
+}
+
 async function filesToPhotos(files: File[]) {
   const photos: string[] = [];
   const failed: string[] = [];
@@ -372,11 +411,15 @@ export default function Home() {
   const [estMarkup, setEstMarkup] = useState(20);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [taskAlerts, setTaskAlerts] = useState<string[]>([]);
+  const [notifyOn, setNotifyOn] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('reny-dark') === '1';
     setDarkMode(saved);
     document.documentElement.classList.toggle('dark', saved);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    setNotifyOn(localStorage.getItem('reny-task-notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted');
     if (!document.getElementById('reny-dark-style')) {
       const style = document.createElement('style');
       style.id = 'reny-dark-style';
@@ -450,6 +493,7 @@ export default function Home() {
     setUsers(people);
     setSavedCustomers(customerData || []);
     setLoading(false);
+    if (email) notifyAssignedTasks(allTodos, email, setTaskAlerts);
   }
 
   async function saveNickname() {
@@ -667,6 +711,29 @@ export default function Home() {
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition ${darkMode ? 'translate-x-5' : ''}`} />
               </button>
             </div>
+            <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t">
+              <span className="text-sm">Task alerts</span>
+              <button
+                type="button"
+                aria-label="Task alerts"
+                onClick={async () => {
+                  if (typeof Notification === 'undefined') { alert('This phone cannot show alerts.'); return; }
+                  if (notifyOn) {
+                    setNotifyOn(false);
+                    localStorage.setItem('reny-task-notify', '0');
+                    return;
+                  }
+                  const result = await Notification.requestPermission();
+                  const allowed = result === 'granted';
+                  setNotifyOn(allowed);
+                  localStorage.setItem('reny-task-notify', allowed ? '1' : '0');
+                  if (!allowed) alert('Allow notifications for Reny Plumbing in your phone settings, then turn Task alerts on again.');
+                }}
+                className={`w-11 h-6 rounded-full relative ${notifyOn ? 'bg-blue-600' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition ${notifyOn ? 'translate-x-5' : ''}`} />
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -676,7 +743,7 @@ export default function Home() {
         {(['calendar', 'unscheduled', 'completed', 'todos', 'customers', 'users', 'estimator'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`px-3 py-3 text-sm font-medium capitalize whitespace-nowrap flex-shrink-0 ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
-            {tab === 'todos' ? 'Task List' : tab}
+            {tab === 'todos' ? 'Task List' : tab}{tab === 'todos' && taskAlerts.length > 0 ? ` (${taskAlerts.length})` : ''}
           </button>
         ))}
         {(activeTab === 'calendar' || activeTab === 'unscheduled') && (
@@ -947,6 +1014,12 @@ export default function Home() {
       </main>
 
       {showJobModal && <JobModal job={editingJob} customers={customers} onClose={() => { setShowJobModal(false); setEditingJob(null); }} onSave={saveJob} defaultDate={activeTab === 'calendar' ? selectedDate : null} />}
+      {taskAlerts.length > 0 && (
+        <button type="button" onClick={() => { setActiveTab('todos'); setTaskAlerts([]); }} className="fixed bottom-4 left-3 right-3 z-40 bg-blue-600 text-white rounded-lg px-4 py-3 shadow text-left">
+          <div className="font-medium">Task assigned to you</div>
+          <div className="text-sm truncate">{taskAlerts[0]}</div>
+        </button>
+      )}
       {viewingJob && (
         <JobDetails
           job={viewingJob}
