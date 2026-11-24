@@ -1199,7 +1199,7 @@ function JobDetails({ job, onClose, onEdit }: { job: Job; onClose: () => void; o
           <p>Description: {job.description || 'None'}</p>
           <p>Phone: {job.customer_phone || 'None'}</p>
           <p>Email: {email || 'None'}</p>
-          <p className="text-blue-600">{[job.scheduled_date, ...readExtraDates(job.notes)].filter(Boolean).map(value => format(new Date(value), 'PPp')).join(' · ') || 'Unscheduled'}</p>
+          <p className="text-blue-600">{[job.scheduled_date, ...readExtraDates(job.notes)].filter((value): value is string => !!value).map(value => format(new Date(value), 'PPp')).join(' · ') || 'Unscheduled'}</p>
         </div>
         <ContactActions phone={job.customer_phone} address={job.address} />
         {notes && <p className="mt-3 text-sm whitespace-pre-wrap">{notes}</p>}
