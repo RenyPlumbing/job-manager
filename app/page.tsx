@@ -370,6 +370,14 @@ export default function Home() {
   const [estRate, setEstRate] = useState(75);
   const [estMaterials, setEstMaterials] = useState(50);
   const [estMarkup, setEstMarkup] = useState(20);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('reny-dark') === '1';
+    setDarkMode(saved);
+    document.documentElement.classList.toggle('dark', saved);
+  }, []);
 
   const labor = estHours * estRate;
   const materialsWithMarkup = estMaterials * (1 + estMarkup / 100);
@@ -609,8 +617,39 @@ export default function Home() {
           <img src="/logo.png" alt="Reny Plumbing" className="h-9 w-auto" />
           <p className="text-xs text-gray-500 truncate max-w-[200px] sm:max-w-none">{session.user.email}</p>
         </div>
-        <button onClick={signOut} className="text-sm text-gray-600 px-2 py-1">Sign out</button>
+        <div className="flex items-center gap-1">
+          <button type="button" aria-label="Settings" onClick={() => setSettingsOpen(open => !open)} className="p-2 text-gray-600">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+            </svg>
+          </button>
+          <button onClick={signOut} className="text-sm text-gray-600 px-2 py-1">Sign out</button>
+        </div>
       </header>
+      {settingsOpen && (
+        <>
+          <button type="button" aria-label="Close settings" className="fixed inset-0 z-20" onClick={() => setSettingsOpen(false)} />
+          <div className="fixed right-3 top-[60px] z-30 w-56 bg-white border rounded-lg shadow p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm">Dark mode</span>
+              <button
+                type="button"
+                aria-label="Dark mode"
+                onClick={() => {
+                  const next = !darkMode;
+                  setDarkMode(next);
+                  localStorage.setItem('reny-dark', next ? '1' : '0');
+                  document.documentElement.classList.toggle('dark', next);
+                }}
+                className={`w-11 h-6 rounded-full relative ${darkMode ? 'bg-blue-600' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition ${darkMode ? 'translate-x-5' : ''}`} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile-friendly nav */}
       <nav className="bg-white border-b flex overflow-x-auto px-2 sticky top-[68px] z-10">
