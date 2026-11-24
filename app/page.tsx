@@ -902,14 +902,14 @@ export default function Home() {
                 return (
                   <div key={week[0].toISOString()} className="relative">
                     <div className="grid grid-cols-7 gap-0.5">
-                      {week.map((day, index) => {
+                      {week.map(day => {
                         const dayJobs = jobsOnDate(day).filter(job => !jobCoversDayAsSpan(job, day));
                         const isToday = isSameDay(day, new Date());
                         const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
                         return (
                           <div key={day.toISOString()} onClick={() => setSelectedDate(day)}
                             className={`relative min-h-16 sm:min-h-24 p-0.5 border rounded cursor-pointer hover:bg-blue-50 ${!isSameMonth(day, currentMonth) ? 'bg-gray-100' : 'bg-white'} ${isSelected ? 'bg-blue-50' : ''} ${isToday ? 'ring-2 ring-blue-500' : ''}`}
-                            style={{ gridColumn: index + 1, gridRow: 1, paddingTop: spans.length ? 18 + spans.reduce((max, span) => Math.max(max, span.lane + 1), 0) * 16 : undefined }}>
+                            style={spans.length ? { paddingTop: 18 + spans.reduce((max, span) => Math.max(max, span.lane + 1), 0) * 16 } : undefined}>
                             <div className="absolute top-0.5 right-1 font-medium">{format(day, 'd')}</div>
                             {dayJobs.slice(0, 1).map(j => <div key={j.id} onClick={e => { e.stopPropagation(); setViewingJob(j); }} className={`px-0.5 rounded truncate mt-0.5 ${invoiceColor(invoiceKey(j)).chip}`}>{j.customer_name || j.title}</div>)}
                             {dayJobs.length > 1 && <div className="text-gray-500">+{dayJobs.length - 1}</div>}
@@ -917,17 +917,19 @@ export default function Home() {
                         );
                       })}
                     </div>
-                    {spans.map(span => (
-                      <button
-                        type="button"
-                        key={`${span.job.id}-${span.start}`}
-                        onClick={e => { e.stopPropagation(); setViewingJob(span.job); }}
-                        className={`absolute z-10 h-4 truncate rounded px-1 text-left text-[10px] font-medium ${scheduleBlockClass(span.job)}`}
-                        style={{ top: 16 + span.lane * 16, left: `calc(${span.start} * ((100% - 12px) / 7 + 2px))`, width: `calc(${span.length} * (100% - 12px) / 7 + ${(span.length - 1) * 2}px)` }}
-                      >
-                        {span.job.customer_name || span.job.address || 'Job'}
-                      </button>
-                    ))}
+                    <div className="pointer-events-none absolute inset-0 grid grid-cols-7 gap-0.5">
+                      {spans.map(span => (
+                        <button
+                          type="button"
+                          key={`${span.job.id}-${span.start}`}
+                          onClick={e => { e.stopPropagation(); setViewingJob(span.job); }}
+                          className={`pointer-events-auto z-10 mx-0.5 h-4 truncate rounded px-1 text-left text-[10px] font-medium ${scheduleBlockClass(span.job)}`}
+                          style={{ gridColumn: `${span.start + 1} / span ${span.length}`, gridRow: 1, alignSelf: 'start', marginTop: 16 + span.lane * 16 }}
+                        >
+                          {span.job.customer_name || span.job.address || 'Job'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -1634,20 +1636,23 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
             ))}
           </div>
           {spanLanes > 0 && (
-            <div className="relative grid border-b" style={{ gridTemplateColumns: '44px repeat(7, 1fr)', height: spanLanes * 22 }}>
-              <div style={{ gridColumn: 1, gridRow: 1 }} />
-              {weekDays.map((day, index) => <div key={day.toISOString()} className="border-l" style={{ gridColumn: index + 2, gridRow: 1 }} />)}
-              {spans.map(span => (
-                <button
-                  type="button"
-                  key={`${span.job.id}-${span.start}`}
-                  onClick={() => onOpen(span.job)}
-                  className={`z-10 mx-0.5 h-5 truncate rounded px-1 text-left text-[11px] font-medium ${scheduleBlockClass(span.job)}`}
-                  style={{ gridColumn: `${span.start + 2} / span ${span.length}`, gridRow: 1, alignSelf: 'start', marginTop: span.lane * 22 }}
-                >
-                  {span.job.customer_name || span.job.address || 'Job'}
-                </button>
-              ))}
+            <div className="grid border-b" style={{ gridTemplateColumns: '44px minmax(0, 1fr)' }}>
+              <div />
+              <div className="relative" style={{ height: spanLanes * 22 }}>
+                <div className="absolute inset-0 grid grid-cols-7">
+                  {spans.map(span => (
+                    <button
+                      type="button"
+                      key={`${span.job.id}-${span.start}`}
+                      onClick={() => onOpen(span.job)}
+                      className={`z-10 mx-0.5 h-5 truncate rounded px-1 text-left text-[11px] font-medium ${scheduleBlockClass(span.job)}`}
+                      style={{ gridColumn: `${span.start + 1} / span ${span.length}`, gridRow: 1, alignSelf: 'start', marginTop: span.lane * 22 }}
+                    >
+                      {span.job.customer_name || span.job.address || 'Job'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           <div className="grid" style={{ gridTemplateColumns: '44px repeat(7, 1fr)', height: gridHeight }}>
