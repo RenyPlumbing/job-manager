@@ -665,7 +665,7 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onInvoice={(invoice: string) => setInvoice(job, invoice)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -689,7 +689,7 @@ export default function Home() {
                   </div>
                 </div>
                 {jobsOnDate(selectedDate || new Date()).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck onInvoice={(invoice: string) => setInvoice(job, invoice)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate || new Date()).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
