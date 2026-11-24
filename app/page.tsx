@@ -530,6 +530,20 @@ export default function Home() {
     await supabase.auth.signOut();
   }
 
+  async function enableTaskAlerts() {
+    if (typeof Notification === 'undefined') { alert('This phone cannot show alerts.'); return; }
+    if (Notification.permission === 'denied') {
+      alert('Alerts are blocked. Open your phone Settings, then Apps, then Reny Plumbing, then Notifications, and turn them on. Then tap Turn on alerts again.');
+      return;
+    }
+    const result = await Notification.requestPermission();
+    const allowed = result === 'granted';
+    setNotifyOn(allowed);
+    localStorage.setItem('reny-task-notify', allowed ? '1' : '0');
+    if (!allowed) { alert('Tap Allow when the phone asks.'); return; }
+    try { await showTaskNotification('Alerts are on'); } catch { /* the phone blocked it */ }
+  }
+
   async function saveJob(jobData: any, newPhotos: File[]) {
     let jobId = editingJob?.id;
     const photoUrls = [...(editingJob?.photos || [])];
@@ -705,27 +719,7 @@ export default function Home() {
               <button
                 type="button"
                 aria-label="Task alerts"
-                onClick={async () => {
-                  if (typeof Notification === 'undefined') { alert('This phone cannot show alerts.'); return; }
-                  if (notifyOn) {
-                    setNotifyOn(false);
-                    localStorage.setItem('reny-task-notify', '0');
-                    return;
-                  }
-                  if (Notification.permission === 'denied') {
-                    alert('Alerts are blocked. Open Chrome, then Settings, Site settings, Notifications. Set job-manager-bce.pages.dev to Allow. Then turn Task alerts on again.');
-                    return;
-                  }
-                  const result = await Notification.requestPermission();
-                  const allowed = result === 'granted';
-                  setNotifyOn(allowed);
-                  localStorage.setItem('reny-task-notify', allowed ? '1' : '0');
-                  if (!allowed) {
-                    alert('Tap Allow when the phone asks. If you do not see a question, set this site to Allow in Chrome notification settings.');
-                    return;
-                  }
-                  try { await showTaskNotification('Alerts are on'); } catch { /* shown in the app instead */ }
-                }}
+                onClick={() => { if (notifyOn) { setNotifyOn(false); localStorage.setItem('reny-task-notify', '0'); return; } enableTaskAlerts(); }}
                 className={`w-11 h-6 rounded-full relative ${notifyOn ? 'bg-blue-600' : 'bg-gray-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition ${notifyOn ? 'translate-x-5' : ''}`} />
@@ -868,6 +862,9 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Task List</h2>
               <button onClick={() => { setShowTaskForm(true); setNewTaskAudio(''); setNewTaskPhotos([]); }} className="text-sm text-blue-600">+ New Task</button>
             </div>
+            {!notifyOn && (
+              <button type="button" onClick={enableTaskAlerts} className="w-full mb-3 bg-blue-600 text-white rounded-lg py-3">Turn on alerts</button>
+            )}
             {showTaskForm && (
               <form onSubmit={e => { e.preventDefault(); addTodo(newTaskTitle, newTaskAssignee, newTaskPhotos, newTaskAudio); }} className="bg-white p-3 rounded-lg border mb-3 space-y-2">
                 <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="Task (optional if you add a photo)" className="w-full border rounded px-3 py-2" />
