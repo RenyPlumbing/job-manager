@@ -634,7 +634,7 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-4 py-3 flex justify-between items-center sticky top-0 z-10">
         <div>
-          <img src={darkMode ? '/logo-dark.png' : '/logo.png'} alt="Reny Plumbing" className="h-9 w-auto" />
+          <BrandLogo darkMode={darkMode} height={36} />
           <p className="text-xs text-gray-500 truncate max-w-[200px] sm:max-w-none">{session.user.email}</p>
         </div>
         <div className="flex items-center gap-1">
@@ -958,6 +958,29 @@ export default function Home() {
   );
 }
 
+function BrandLogo({ darkMode, height, className }: { darkMode?: boolean; height: number; className?: string }) {
+  const width = Math.round(height * 2647 / 623);
+  if (!darkMode) return <img src="/logo.png" alt="Reny Plumbing" className={className} style={{ height, width }} />;
+  return (
+    <div
+      role="img"
+      aria-label="Reny Plumbing"
+      className={className}
+      style={{
+        height,
+        width,
+        backgroundColor: '#2563eb',
+        WebkitMaskImage: 'url(/logo.png)',
+        maskImage: 'url(/logo.png)',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+      }}
+    />
+  );
+}
+
 function AuthScreen({ onSignIn, onSignUp, darkMode }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -965,7 +988,7 @@ function AuthScreen({ onSignIn, onSignUp, darkMode }: any) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="bg-white p-6 rounded-xl border max-w-md w-full">
-        <img src={darkMode ? '/logo-dark.png' : '/logo.png'} alt="Reny Plumbing" className="h-16 w-auto mx-auto mb-6" />
+        <BrandLogo darkMode={darkMode} height={64} className="mx-auto mb-6" />
         <form onSubmit={e => { e.preventDefault(); isSignUp ? onSignUp(email, password) : onSignIn(email, password); }} className="space-y-4">
           <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required className="w-full border rounded px-3 py-2" />
           <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required className="w-full border rounded px-3 py-2" />
