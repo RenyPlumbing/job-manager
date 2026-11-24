@@ -216,14 +216,15 @@ async function notifyAssignedTasks(allTodos: Todo[], email: string, setAlerts: (
   setAlerts(fresh);
   if (localStorage.getItem('reny-task-notify') !== '1' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   for (const body of fresh) {
-    try {
-      const reg = await navigator.serviceWorker?.getRegistration();
-      if (reg) await reg.showNotification('Task assigned to you', { body, icon: '/icon-192.png', badge: '/notification-icon.png', tag: 'reny-task-' + body.slice(0, 40) });
-      else new Notification('Task assigned to you', { body, icon: '/icon-192.png' });
-    } catch {
-      try { new Notification('Task assigned to you', { body, icon: '/icon-192.png' }); } catch { /* alerts blocked */ }
-    }
+    try { await showTaskNotification(body); } catch { /* alerts blocked */ }
   }
+}
+
+async function showTaskNotification(body: string) {
+  const title = 'Task assigned to you';
+  const reg = await navigator.serviceWorker?.getRegistration();
+  if (reg) await reg.showNotification(title, { body, icon: '/icon-192.png', badge: '/notification-icon.png', tag: 'reny-task-' + Date.now() });
+  else new Notification(title, { body, icon: '/icon-192.png' });
 }
 
 async function filesToPhotos(files: File[]) {
@@ -398,19 +399,7 @@ export default function Home() {
   const [openCustomer, setOpenCustomer] = useState<string | null>(null);
   const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'needs' | 'sent' | 'paid'>('all');
   const [loading, setLoading] = useState(true);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day' | 'tiles'>('month');
-  const [showJobModal, setShowJobModal] = useState(false);
-  const [editingJob, setEditingJob] = useState<Job | null>(null);
-  const [viewingJob, setViewingJob] = useState<Job | null>(null);
-
-  const [estHours, setEstHours] = useState(2);
-  const [estRate, setEstRate] = useState(75);
-  const [estMaterials, setEstMaterials] = useState(50);
-  const [estMarkup, setEstMarkup] = useState(20);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  useState(false);
   const [taskAlerts, setTaskAlerts] = useState<string[]>([]);
   const [notifyOn, setNotifyOn] = useState(false);
 
@@ -723,11 +712,19 @@ export default function Home() {
                     localStorage.setItem('reny-task-notify', '0');
                     return;
                   }
+                  if (Notification.permission === 'denied') {
+                    alert('Alerts are blocked. Open Chrome, then Settings, Site settings, Notifications. Set job-manager-bce.pages.dev to Allow. Then turn Task alerts on again.');
+                    return;
+                  }
                   const result = await Notification.requestPermission();
                   const allowed = result === 'granted';
                   setNotifyOn(allowed);
                   localStorage.setItem('reny-task-notify', allowed ? '1' : '0');
-                  if (!allowed) alert('Allow notifications for Reny Plumbing in your phone settings, then turn Task alerts on again.');
+                  if (!allowed) {
+                    alert('Tap Allow when the phone asks. If you do not see a question, set this site to Allow in Chrome notification settings.');
+                    return;
+                  }
+                  try { await showTaskNotification('Alerts are on'); } catch { /* shown in the app instead */ }
                 }}
                 className={`w-11 h-6 rounded-full relative ${notifyOn ? 'bg-blue-600' : 'bg-gray-300'}`}
               >
@@ -1363,3 +1360,4 @@ function WeekView({ selectedDate, jobsOnDate, onShift, onOpen }: { selectedDate:
     </div>
   );
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
