@@ -80,7 +80,7 @@ function readInvoice(notes?: string) {
 }
 
 function readEstimate(notes?: string) {
-  const match = (notes || '').match(/@@estimate:(needs|sent|approved)@@/);
+  const match = (notes || '').match(/@@estimate:(open|needs|sent|approved)@@/);
   return match ? match[1] : '';
 }
 
@@ -102,7 +102,7 @@ function readAllDay(notes?: string) {
 function readNotes(notes?: string) {
   return (notes || '')
     .replace(/@@invoice:(needs|sent|paid)@@\n?/g, '')
-    .replace(/@@estimate:(needs|sent|approved)@@\n?/g, '')
+    .replace(/@@estimate:(open|needs|sent|approved)@@\n?/g, '')
     .replace(/@@email:.*?@@\n?/g, '')
     .replace(/@@dates:.*?@@\n?/g, '')
     .replace(/@@until:\d{2}:\d{2}@@\n?/g, '')
@@ -132,8 +132,14 @@ function isEstimateJob(job?: { status?: string; notes?: string }) {
   return job?.status === 'estimate' || !!readEstimate(job?.notes);
 }
 
+function estimateStage(notes?: string) {
+  const key = readEstimate(notes);
+  return key === 'needs' || key === 'sent' || key === 'approved' ? key : '';
+}
+
 function jobColor(job?: { status?: string; notes?: string }) {
-  if (isEstimateJob(job)) return estimateColor(readEstimate(job?.notes) || 'needs');
+  const stage = estimateStage(job?.notes);
+  if (stage) return estimateColor(stage);
   return invoiceColor(invoiceKey(job));
 }
 
@@ -143,7 +149,7 @@ function packNotes(email: string, notes: string, invoice = '', extraDates?: stri
   const dayFlag = allDay == null ? readAllDay(notes) : allDay;
   const est = estimate == null ? readEstimate(notes) : estimate;
   const clean = readNotes(notes).trim();
-  const estTag = est === 'needs' || est === 'sent' || est === 'approved' ? `@@estimate:${est}@@` : '';
+  const estTag = est === 'open' || est === 'needs' || est === 'sent' || est === 'approved' ? `@@estimate:${est}@@` : '';
   const inv = !estTag && (invoice === 'needs' || invoice === 'sent' || invoice === 'paid') ? `@@invoice:${invoice}@@\n` : '';
   const mail = email.trim() ? `@@email:${email.trim()}@@` : '';
   const dateTag = dates.length ? `@@dates:${dates.join('|')}@@` : '';
@@ -533,11 +539,17 @@ export default function Home() {
         html.dark .job-card, html.dark .job-card h3, html.dark .job-card p { color:#ffffff !important; }
         html.dark .job-card.bg-orange-200, html.dark .job-card.bg-orange-200 h3, html.dark .job-card.bg-orange-200 p,
         html.dark .job-card.bg-yellow-100, html.dark .job-card.bg-yellow-100 h3, html.dark .job-card.bg-yellow-100 p,
-        html.dark .job-card.bg-green-100, html.dark .job-card.bg-green-100 h3, html.dark .job-card.bg-green-100 p { color:#111827 !important; }
+        html.dark .job-card.bg-green-100, html.dark .job-card.bg-green-100 h3, html.dark .job-card.bg-green-100 p,
+        html.dark .job-card.bg-sky-100, html.dark .job-card.bg-sky-100 h3, html.dark .job-card.bg-sky-100 p,
+        html.dark .job-card.bg-purple-100, html.dark .job-card.bg-purple-100 h3, html.dark .job-card.bg-purple-100 p,
+        html.dark .job-card.bg-teal-100, html.dark .job-card.bg-teal-100 h3, html.dark .job-card.bg-teal-100 p { color:#111827 !important; }
         html.dark button.job-tile, html.dark button.job-tile * { color:#f8fafc !important; }
         html.dark button.job-tile.bg-orange-200, html.dark button.job-tile.bg-orange-200 *,
         html.dark button.job-tile.bg-yellow-100, html.dark button.job-tile.bg-yellow-100 *,
-        html.dark button.job-tile.bg-green-100, html.dark button.job-tile.bg-green-100 * { color:#111827 !important; }
+        html.dark button.job-tile.bg-green-100, html.dark button.job-tile.bg-green-100 *,
+        html.dark button.job-tile.bg-sky-100, html.dark button.job-tile.bg-sky-100 *,
+        html.dark button.job-tile.bg-purple-100, html.dark button.job-tile.bg-purple-100 *,
+        html.dark button.job-tile.bg-teal-100, html.dark button.job-tile.bg-teal-100 * { color:#111827 !important; }
       `;
       document.head.appendChild(style);
     }
@@ -727,9 +739,7 @@ export default function Home() {
     await rememberCustomer(jobData);
     setShowJobModal(false);
     setEditingJob(null);
-    if (readEstimate(jobData.notes)) {
-      setActiveTab('estimates');
-    } else if (jobData.scheduled_date && jobData.status === 'scheduled') {
+    if (jobData.scheduled_date && jobData.status === 'scheduled') {
       const when = new Date(jobData.scheduled_date);
       setActiveTab('calendar');
       setSelectedDate(when);
@@ -744,7 +754,16 @@ export default function Home() {
 
   async function setJobCompleted(id: string, completed: boolean) {
     const job = jobs.find(item => item.id === id);
-    if (!job || isEstimateJob(job)) return;
+    if (!job) return;
+    if (isEstimateJob(job)) {
+      const current = readEstimate(job.notes);
+      const estimate = completed ? (current === 'sent' || current === 'approved' ? current : 'needs') : 'open';
+      const { error } = await supabase.from('jobs').update({ notes: packNotes(readEmail(job.notes), job.notes || '', '', undefined, undefined, undefined, estimate) }).eq('id', id);
+      if (error) { alert(error.message); return; }
+      if (completed) setActiveTab('estimates');
+      await fetchData();
+      return;
+    }
     const patch: any = { status: completed ? 'completed' : 'scheduled' };
     if (completed && job && !readInvoice(job.notes)) {
       patch.notes = packNotes(readEmail(job.notes), job.notes || '', 'needs');
@@ -971,7 +990,7 @@ export default function Home() {
               <div className="mt-4">
                 <h3 className="font-medium mb-2 text-sm">Jobs on {format(selectedDate, 'PPP')}</h3>
                 {jobsOnDate(selectedDate).map(job => (
-                  <JobCard key={job.id} job={job} showCompletedCheck={!isEstimateJob(job)} onOpen={() => setViewingJob(job)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
+                  <JobCard key={job.id} job={job} showCompletedCheck onOpen={() => setViewingJob(job)} onToggleComplete={(done: boolean) => setJobCompleted(job.id, done)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
                 ))}
                 {jobsOnDate(selectedDate).length === 0 && <p className="text-gray-500 text-sm">Nothing scheduled this day.</p>}
               </div>
@@ -1017,10 +1036,10 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Unscheduled Jobs</h2>
               <button type="button" onClick={() => { setEditingJob(null); setShowJobModal(true); }} className="px-3 py-1.5 rounded text-sm bg-blue-600 text-white">+ Job</button>
             </div>
-            {jobs.filter(j => j.status === 'unscheduled' && !isEstimateJob(j)).map(job => (
+            {jobs.filter(j => j.status === 'unscheduled' && !estimateStage(j.notes)).map(job => (
               <JobCard key={job.id} job={job} onOpen={() => setViewingJob(job)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
             ))}
-            {jobs.filter(j => j.status === 'unscheduled' && !isEstimateJob(j)).length === 0 && <p className="text-gray-500">None yet. Leave the date blank.</p>}
+            {jobs.filter(j => j.status === 'unscheduled' && !estimateStage(j.notes)).length === 0 && <p className="text-gray-500">None yet. Leave the date blank.</p>}
           </div>
         )}
 
@@ -1031,10 +1050,10 @@ export default function Home() {
                 <button key={key} type="button" onClick={() => setEstimateFilter(key)} className={`px-3 py-1.5 rounded text-sm ${estimateFilter === key ? 'bg-sky-600 text-white' : 'border'}`}>{label}</button>
               ))}
             </div>
-            {jobs.filter(job => isEstimateJob(job) && (estimateFilter === 'all' || (readEstimate(job.notes) || 'needs') === estimateFilter)).map(job => (
+            {jobs.filter(job => !!estimateStage(job.notes) && (estimateFilter === 'all' || estimateStage(job.notes) === estimateFilter)).map(job => (
               <JobCard key={job.id} job={job} onEstimate={(estimate: string) => setEstimate(job, estimate)} onEdit={() => { setEditingJob(job); setShowJobModal(true); }} onDelete={() => deleteJob(job.id)} />
             ))}
-            {jobs.filter(job => isEstimateJob(job) && (estimateFilter === 'all' || (readEstimate(job.notes) || 'needs') === estimateFilter)).length === 0 && <p className="text-gray-500">None yet. Use + Estimate on the calendar.</p>}
+            {jobs.filter(job => !!estimateStage(job.notes) && (estimateFilter === 'all' || estimateStage(job.notes) === estimateFilter)).length === 0 && <p className="text-gray-500">None yet. Check Completed on a calendar estimate.</p>}
           </div>
         )}
 
@@ -1329,8 +1348,8 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
           <ContactActions phone={job.customer_phone} address={job.address} />
           {job.photos && job.photos.length > 0 && <PhotoGallery urls={job.photos} />}
           {showCompletedCheck && (
-            <label className="flex items-center gap-2 mt-3 text-sm font-medium">
-              <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed'} onChange={() => onToggleComplete(job.status !== 'completed')} />
+            <label className="flex items-center gap-2 mt-3 text-sm font-medium text-gray-900">
+              <input type="checkbox" className="w-5 h-5" checked={job.status === 'completed' || !!estimateStage(job.notes)} onChange={() => onToggleComplete(!(job.status === 'completed' || estimateStage(job.notes)))} />
               Completed
             </label>
           )}
@@ -1349,7 +1368,7 @@ function JobCard({ job, onEdit, onDelete, onToggleComplete, showCompletedCheck, 
               <p className="text-xs text-gray-600 mb-1">Status</p>
               <div className="flex flex-wrap gap-1">
                 {([['needs', 'Needs estimate'], ['sent', 'Estimate sent'], ['approved', 'Approved']] as const).map(([key, label]) => (
-                  <button type="button" key={key} onClick={() => onEstimate(key)} className={`px-2 py-1 rounded text-xs border ${estimate === key ? estimateColor(key).on : 'bg-white'}`}>{label}</button>
+                  <button type="button" key={key} onClick={() => onEstimate(key)} className={`px-2 py-1 rounded text-xs border ${estimate === key ? estimateColor(key).on : 'bg-white text-gray-900'}`}>{label}</button>
                 ))}
               </div>
             </div>
@@ -1440,7 +1459,7 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
         jobDate ? extraDates.filter(Boolean).map(value => new Date(value).toISOString()) : [],
         jobDate && showRange && endTime ? endTime : '',
         !!(jobDate && !jobTime && !(showRange && endTime)),
-        isEstimate ? (readEstimate(job?.notes) || 'needs') : '',
+        isEstimate ? (estimateStage(job?.notes) || 'open') : '',
       ),
       estimated_hours: form.estimated_hours ? +form.estimated_hours : null,
       hourly_rate: form.hourly_rate ? +form.hourly_rate : null,
@@ -1546,7 +1565,10 @@ function JobModal({ job, customers, onClose, onSave, defaultDate }: any) {
 }
 
 function scheduleBlockClass(job: Job) {
-  if (isEstimateJob(job) || invoiceKey(job)) return jobColor(job).block;
+  const stage = estimateStage(job.notes);
+  if (stage) return estimateColor(stage).block;
+  const key = invoiceKey(job);
+  if (key) return invoiceColor(key).block;
   return 'bg-violet-300 text-violet-950';
 }
 
